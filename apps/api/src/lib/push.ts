@@ -5,7 +5,11 @@ import { isWithinSchedule } from './pushSchedule.js';
 
 export const VAPID_PUBLIC  = (process.env.VAPID_PUBLIC_KEY  ?? '').trim();
 const        VAPID_PRIVATE = (process.env.VAPID_PRIVATE_KEY ?? '').trim();
-const        VAPID_EMAIL   = (process.env.VAPID_EMAIL       ?? 'mailto:denaosu@gmail.com').trim();
+const        _rawEmail     = (process.env.VAPID_EMAIL       ?? 'mailto:denaosu@gmail.com').trim();
+// web-push exige un « subject » au format URL (`mailto:` ou `https:`). Si la var
+// contient un email brut (ex. `pourcharly@hotmail.com`), on préfixe `mailto:`
+// au lieu de faire échouer setVapidDetails (ce qui désactiverait le push).
+const        VAPID_EMAIL   = /^(mailto:|https?:)/i.test(_rawEmail) ? _rawEmail : `mailto:${_rawEmail}`;
 
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
   try {

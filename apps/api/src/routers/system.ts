@@ -1,5 +1,7 @@
 import { publicProcedure, router } from '../trpc.js';
 import { SERVER_STARTED_AT } from '../startup.js';
+import { isR2Configured } from '../lib/r2.js';
+import { isDev } from '../env.js';
 
 /** Normalise : transforme '' / whitespace en null (Railway peut injecter une chaîne vide). */
 function nonEmpty(v: string | undefined): string | null {
@@ -16,5 +18,14 @@ export const systemRouter = router({
     buildId: nonEmpty(process.env['BUILD_ID']),
     deploymentId: nonEmpty(process.env['RAILWAY_DEPLOYMENT_ID']),
     commitSha: nonEmpty(process.env['RAILWAY_GIT_COMMIT_SHA']),
+  })),
+
+  /**
+   * Feature flags lus par le client. `videoUpload` : l'upload vidéo n'est
+   * disponible que si un stockage est configuré (R2 en prod, disque local en
+   * dev). Sans ça, le client masque le bouton « insérer une vidéo ».
+   */
+  config: publicProcedure.query(() => ({
+    videoUpload: isR2Configured() || isDev,
   })),
 });

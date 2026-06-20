@@ -75,7 +75,12 @@ async function main() {
   );
 
   const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'videos');
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  // Dossier d'upload disque : utilisé uniquement en dev (sans R2). En prod le
+  // système de fichiers du conteneur peut être read-only → un mkdir au boot
+  // ferait planter le démarrage. On ne le crée donc qu'en dev, en best-effort.
+  if (isDev) {
+    try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch { /* best-effort */ }
+  }
 
   await app.register(helmet, {
     // YouTube (et d'autres embeds) refusent de lire la vidéo sans Referer.
@@ -379,7 +384,7 @@ async function main() {
       } catch {
         return reply.code(500).send({ error: 'Erreur lors de l\'upload.' });
       }
-    } else {
+    } else if (isDev) {
       // Dev : écriture sur disque local
       const absolutePath = path.join(UPLOADS_DIR, `${videoId}.${ext}`);
       const writeStream = fs.createWriteStream(absolutePath);
@@ -395,6 +400,10 @@ async function main() {
         fs.rmSync(absolutePath, { force: true });
         return reply.code(413).send({ error: 'Vidéo trop lourde (max 500 Mo).' });
       }
+    } else {
+      // Ni R2 ni dev : aucun stockage vidéo disponible. On refuse proprement
+      // (le client masque déjà le bouton — ceci est une défense en profondeur).
+      return reply.code(503).send({ error: 'Upload vidéo désactivé (stockage non configuré).' });
     }
 
     const video = await db.video.create({

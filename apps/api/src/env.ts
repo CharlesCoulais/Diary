@@ -23,7 +23,16 @@ const envSchema = z.object({
   R2_BUCKET: z.string().optional(),
 });
 
-const parsed = envSchema.safeParse(process.env);
+// Railway (entre autres) injecte parfois une chaîne VIDE pour une variable
+// « créée mais sans valeur ». Or `z.string().url().optional()` rejette "" (ce
+// n'est pas `undefined`) → le boot planterait sur une var optionnelle laissée
+// vide (ex. R2_ENDPOINT). On retire donc les chaînes vides/espaces avant parse :
+// elles sont alors traitées comme non définies (→ `.optional()`/`.default()`).
+const rawEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([, v]) => (v ?? '').trim() !== ''),
+);
+
+const parsed = envSchema.safeParse(rawEnv);
 
 if (!parsed.success) {
   console.error('Variables d\'environnement invalides :');

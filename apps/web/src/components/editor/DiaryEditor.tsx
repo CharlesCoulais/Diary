@@ -499,6 +499,11 @@ export const DiaryEditor = forwardRef<DiaryEditorHandle, DiaryEditorProps>(funct
     }
   }
 
+  // Upload vidéo disponible uniquement si un stockage est configuré côté serveur
+  // (R2 en prod, disque en dev). Sinon on masque le bouton « insérer une vidéo ».
+  const videoUploadEnabled =
+    trpc.system.config.useQuery(undefined, { staleTime: Infinity }).data?.videoUpload ?? false;
+
   const handleVideoFile = useCallback(async (file: File) => {
     const ed = editorRef.current;
     if (!ed) return;
@@ -542,7 +547,7 @@ export const DiaryEditor = forwardRef<DiaryEditorHandle, DiaryEditorProps>(funct
                 onFontSizeChange={onFontSizeChange}
                 onImageInsert={handleImageFiles}
                 onAudioInsert={handleAudioFiles}
-                onVideoInsert={handleVideoFile}
+                onVideoInsert={videoUploadEnabled ? handleVideoFile : undefined}
                 toolbarPosition={toolbarPosition}
                 onTogglePosition={toggleToolbarPosition}
               />
@@ -568,7 +573,7 @@ export const DiaryEditor = forwardRef<DiaryEditorHandle, DiaryEditorProps>(funct
                 onFontSizeChange={onFontSizeChange}
                 onImageInsert={handleImageFiles}
                 onAudioInsert={handleAudioFiles}
-                onVideoInsert={handleVideoFile}
+                onVideoInsert={videoUploadEnabled ? handleVideoFile : undefined}
                 toolbarPosition={toolbarPosition}
                 onTogglePosition={toggleToolbarPosition}
               />
