@@ -1,0 +1,210 @@
+/*
+ * Design tokens — palette "warm cocoa".
+ * Voir ARCHITECTURE.md §9.1.
+ *
+ * Aucun pur noir, aucun pur blanc, aucun rouge vif, aucun bleu Twitter.
+ * On reste dans des teintes chaudes, parchemin et terre cuite.
+ */
+
+:root {
+  --color-bg-primary: #f5efe6;
+  --color-bg-elevated: #fbf6ee;
+  --color-text-primary: #3a322c;
+  /* Taupe chaud assombri pour atteindre WCAG AA (4.77:1 sur le fond cream, vs
+     3.47:1 avant #8a7e6f) sur tout texte muté pleine opacité — TRANS-01. Reste
+     dans la famille warm. Le dark était déjà conforme (4.65:1), inchangé. */
+  --color-text-muted: #736857;
+  /* Accent mode clair : bleu canard / pétrole vert. Choisi pour offrir
+     suffisamment de caractère sur un fond cream sans tomber dans le bleu
+     froid d'un dashboard SaaS — la touche verdâtre dialogue avec le success
+     #7a9b76, et reste cohérente avec la philosophie "warm" de la palette. */
+  --color-accent: #4f7a85;
+  --color-accent-soft: #c6d8dc;
+  --color-success: #7a9b76;
+  --color-warning: #c9a35c;
+  --color-error: #b86a5e;
+  --color-guest: #c96a4e;       /* coral — nom de l'autre personne */
+  --color-me-bubble: rgba(79, 122, 133, 0.26); /* fond bulle "moi" en light (mirror de l'accent) */
+
+  /* Tokens sémantiques par statut de note — évite de hardcoder
+     bg-amber-* / bg-orange-* / bg-rose-* / bg-purple-* dans les composants. */
+  --color-sealed: #c9a35c;      /* capsule temporelle scellée (amber) */
+  --color-adult:  #c96a4e;      /* contenu 18+ (orange terre cuite) */
+  --color-secret: #b86a86;      /* boîte de Pandore (rose terreux) */
+  --color-test:   #8a6da0;      /* tâche à tester / statut TO_TEST (violet doux) */
+
+  /* Couleurs par type de note — palette répartie en teintes (~33° d'écart) pour
+     qu'aucune paire ne se confonde, déclinée par thème (cf. .dark + @media) :
+     teintes PROFONDES ici (lisibles sur le crème). Journal suit l'accent de
+     l'app. Réf : utilisées via getNoteTypeConfig().color = var(--color-note-X)
+     + helper noteTint() pour les fonds teintés (color-mix). */
+  --color-note-journal:  var(--color-accent);
+  --color-note-book:     #af2db4;  /* magenta-violet */
+  --color-note-series:   #589325;  /* vert lime */
+  --color-note-movie:    #938125;  /* or olive */
+  --color-note-music:    #b42d7b;  /* framboise */
+  --color-note-outing:   #b4652d;  /* orange terre */
+  --color-note-shopping: #b42d3f;  /* rouge */
+  --color-note-dev:      #1890a0;  /* turquoise (inchangé, identique dark) */
+  --color-note-quizz:    #342db4;  /* indigo */
+  --color-note-agenda:   #702db4;  /* violet */
+  --color-note-finance:  #3f8a5a;  /* vert */
+
+  /* Baromètre couple — tokenisées pour s'adapter au dark (cf. .dark + @media). */
+  --color-couple-red:   #c25b52;  /* journée tendue */
+  --color-couple-green: #7a9b76;  /* bonne journée */
+  --color-couple-blue:  #6d8bb0;  /* neutre */
+
+  /* Canaux RGB séparés pour les modificateurs d'opacité Tailwind (bg-accent/40 etc.)
+     Tailwind v3 génère rgb(var(--x) / alpha) ce qui requiert des valeurs R G B entières */
+  --color-bg-primary-rgb: 245 239 230;
+  --color-bg-elevated-rgb: 251 246 238;
+  --color-text-primary-rgb: 58 50 44;
+  --color-text-secondary: #574a3e;
+  --color-text-secondary-rgb: 87 74 62;
+  --color-text-muted-rgb: 115 104 87;
+  --color-accent-rgb: 79 122 133;
+  --color-accent-soft-rgb: 198 216 220;
+  --color-success-rgb: 122 155 118;
+  --color-guest-rgb: 201 106 78;
+  --color-sealed-rgb: 201 163 92;
+  --color-adult-rgb: 201 106 78;
+  --color-secret-rgb: 184 106 134;
+  --color-test-rgb: 138 109 160;
+
+  /* Annotation highlights */
+  --color-annotation:         rgba(122, 155, 118, 0.14);
+  --color-annotation-hover:   rgba(122, 155, 118, 0.24);
+  --color-annotation-open:    rgba(122, 155, 118, 0.32);
+  --color-annotation-pending: rgba(122, 155, 118, 0.20);
+  --color-annotation-ring:    rgba(122, 155, 118, 0.55);
+
+  --shadow-soft:
+    0 1px 2px rgba(58, 50, 44, 0.04),
+    0 4px 16px rgba(58, 50, 44, 0.06);
+
+  --ease-cozy: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Mode sombre activé via classe .dark sur <html> */
+.dark {
+  --color-bg-primary:  #0d1220;
+  --color-bg-elevated: #141a2e;
+  --color-text-primary: #d8e2f5;
+  --color-text-muted:  #6b7fa8;
+  --color-accent:      #6d9cf8;
+  --color-accent-soft: #1a2545;
+  --color-success: #7ab88a;
+  --color-warning: #c9a55c;
+  --color-error:   #c97a75;
+  --color-guest: #e07a5f;           /* coral vif sur fond sombre */
+  --color-me-bubble: rgba(109, 156, 248, 0.32); /* fond bulle "moi" en dark */
+  --color-sealed: #d4ad6c;          /* amber un peu plus clair pour le dark */
+  --color-adult:  #e07a5f;          /* coral 18+ — partagé avec --color-guest */
+  --color-secret: #d489a4;          /* rose terreux éclairci */
+  --color-test:   #a489c4;          /* violet doux éclairci */
+
+  /* Couleurs par type de note — versions LUMINEUSES sur le bleu nuit.
+     Journal n'est pas redéfini : --color-note-journal = var(--color-accent)
+     posé en :root suit l'accent (périwinkle ici). Dev inchangé (cf. demande). */
+  --color-note-book:     #de74e2;
+  --color-note-series:   #9add5f;
+  --color-note-movie:    #ddc85f;
+  --color-note-music:    #e274b4;
+  --color-note-outing:   #e2a274;
+  --color-note-shopping: #e27483;
+  --color-note-dev:      #1890a0;
+  --color-note-quizz:    #7a74e2;
+  --color-note-agenda:   #ab74e2;
+  --color-note-finance:  #74e2ab;
+
+  --color-couple-red:   #d27d74;    /* éclairci pour le fond bleu nuit */
+  --color-couple-green: #7ab88a;
+  --color-couple-blue:  #88a6cf;
+
+  --color-bg-primary-rgb: 13 18 32;
+  --color-bg-elevated-rgb: 20 26 46;
+  --color-text-primary-rgb: 216 226 245;
+  --color-text-secondary: #b6b6c2;
+  --color-text-secondary-rgb: 182 182 194;
+  --color-text-muted-rgb: 107 127 168;
+  --color-accent-rgb: 109 156 248;
+  --color-accent-soft-rgb: 26 37 69;
+  --color-success-rgb: 122 184 138;
+  --color-guest-rgb: 224 122 95;
+  --color-sealed-rgb: 212 173 108;
+  --color-adult-rgb: 224 122 95;
+  --color-secret-rgb: 212 137 164;
+  --color-test-rgb: 164 137 196;
+
+  --color-annotation:         rgba(109, 156, 248, 0.14);
+  --color-annotation-hover:   rgba(109, 156, 248, 0.24);
+  --color-annotation-open:    rgba(109, 156, 248, 0.32);
+  --color-annotation-pending: rgba(109, 156, 248, 0.20);
+  --color-annotation-ring:    rgba(109, 156, 248, 0.55);
+
+  --shadow-soft:
+    0 1px 2px rgba(0, 0, 0, 0.32),
+    0 4px 16px rgba(0, 0, 0, 0.50);
+}
+
+/* Mode sombre auto si l'OS le demande et qu'aucun choix n'a été imposé */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --color-bg-primary:  #0d1220;
+    --color-bg-elevated: #141a2e;
+    --color-text-primary: #d8e2f5;
+    --color-text-muted:  #6b7fa8;
+    --color-accent:      #6d9cf8;
+    --color-accent-soft: #1a2545;
+    --color-success: #7ab88a;
+    --color-warning: #c9a55c;
+    --color-error:   #c97a75;
+    --color-guest: #e07a5f;
+    --color-me-bubble: rgba(109, 156, 248, 0.32);
+    --color-sealed: #d4ad6c;
+    --color-adult:  #e07a5f;
+    --color-secret: #d489a4;
+    --color-test:   #a489c4;
+
+    --color-note-book:     #de74e2;
+    --color-note-series:   #9add5f;
+    --color-note-movie:    #ddc85f;
+    --color-note-music:    #e274b4;
+    --color-note-outing:   #e2a274;
+    --color-note-shopping: #e27483;
+    --color-note-dev:      #1890a0;
+    --color-note-quizz:    #7a74e2;
+    --color-note-agenda:   #ab74e2;
+    --color-note-finance:  #74e2ab;
+
+    --color-couple-red:   #d27d74;
+    --color-couple-green: #7ab88a;
+    --color-couple-blue:  #88a6cf;
+
+    --color-bg-primary-rgb: 13 18 32;
+    --color-bg-elevated-rgb: 20 26 46;
+    --color-text-primary-rgb: 216 226 245;
+    --color-text-secondary: #b6b6c2;
+    --color-text-secondary-rgb: 182 182 194;
+    --color-text-muted-rgb: 107 127 168;
+    --color-accent-rgb: 109 156 248;
+    --color-accent-soft-rgb: 26 37 69;
+    --color-success-rgb: 122 184 138;
+    --color-guest-rgb: 224 122 95;
+    --color-sealed-rgb: 212 173 108;
+    --color-adult-rgb: 224 122 95;
+    --color-secret-rgb: 212 137 164;
+    --color-test-rgb: 164 137 196;
+
+    --color-annotation:         rgba(109, 156, 248, 0.14);
+    --color-annotation-hover:   rgba(109, 156, 248, 0.24);
+    --color-annotation-open:    rgba(109, 156, 248, 0.32);
+    --color-annotation-pending: rgba(109, 156, 248, 0.20);
+    --color-annotation-ring:    rgba(109, 156, 248, 0.55);
+
+    --shadow-soft:
+      0 1px 2px rgba(0, 0, 0, 0.32),
+      0 4px 16px rgba(0, 0, 0, 0.50);
+  }
+}

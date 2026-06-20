@@ -1,0 +1,26 @@
+# Fork "Diary" (app du confident) — base Postgres ISOLÉE de l'original :
+# projet/conteneur/volume/port distincts pour pouvoir tourner EN MÊME TEMPS que
+# l'app d'origine (qui occupe 5433 / journal-postgres).
+name: diary-confident
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: diary-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: journal
+      POSTGRES_PASSWORD: journal
+      POSTGRES_DB: journal
+    ports:
+      - "5434:5432"
+    volumes:
+      - diary_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U journal -d journal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  diary_postgres_data:

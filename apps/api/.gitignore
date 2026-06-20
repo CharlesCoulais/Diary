@@ -1,0 +1,9 @@
+.env
+.env.local
+dist/
+
+# Sauvegardes DB (db:backup) — contiennent des données utilisateur, ne jamais committer
+backups/
+
+# Vidéos uploadées sur disque — données utilisateur, générées au runtime
+uploads/

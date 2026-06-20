@@ -1,0 +1,1 @@
+ALTER TABLE "Entry" ADD COLUMN "hideUntilAt" TIMESTAMP(3);

@@ -1,0 +1,1044 @@
+// Schéma Prisma — Journal Cozy
+// Voir ARCHITECTURE.md §4 et §5 pour les justifications de design.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Identité
+// ============================================================
+
+enum UserRole {
+  OWNER
+  GUEST
+}
+
+enum GuestAccess {
+  ALL       // accède à toutes les entrées SHARED_ALL
+  SPECIFIC  // accède uniquement aux entrées explicitement partagées
+  CONFIDANT // accède à toutes les entrées, publiques et privées
+}
+
+model User {
+  id              String       @id @default(cuid())
+  email           String       @unique
+  passwordHash    String
+  role            UserRole
+  // Pour les Guests :
+  guestAccess          GuestAccess?
+  guestCanComment      Boolean      @default(false)
+  guestCanViewCalendar Boolean      @default(false)
+  guestCanViewAgenda   Boolean      @default(false)
+  guestCanViewBudget   Boolean      @default(false)
+  // 2FA TOTP
+  twoFactorSecret String?
+  totpEnabled     Boolean  @default(false)
+  recoveryCodes   String[] // hashés (bcrypt)
+  pinHash         String?   // hash SHA-256 du PIN (synchronisé entre appareils)
+  apiKeyHash      String?   @unique // SHA-256 de la clé API read-only
+  // Affichage / métadonnées
+  displayName     String?
+  avatarImageId   String?   // ID de l'Image utilisée comme photo de profil
+  invitedAt       DateTime?
+  invitedById     String?
+  invitedBy       User?        @relation("Invitations", fields: [invitedById], references: [id])
+  /// Soft-delete pour les guests révoqués. Quand non-null, le user ne peut
+  /// plus se connecter, ses sessions sont supprimées, il n'apparaît plus
+  /// dans les listes guest actifs. Ses comments / reactions / ratings /
+  /// readGate responses sont préservés (historique de l'owner intact).
+  revokedAt       DateTime?
+  /// Marqueur posé quand l'owner régénère un mot de passe temporaire pour
+  /// un confident. Tant qu'il est true, l'app force l'écran
+  /// « Choisis ton mot de passe définitif » à chaque navigation
+  /// (impossible d'utiliser l'app autrement). Mis à false dès qu'un
+  /// nouveau mdp est choisi.
+  mustChangePassword Boolean @default(false)
+  invitees        User[]       @relation("Invitations")
+  noteTypeDefs    NoteTypeDef[] @relation("NoteTypeDefsOwned")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Notifications push
+  notifEnabled      Boolean  @default(false)
+  notifReminderTime String?  // "HH:MM", null = pas de rappel quotidien (rappel d'écriture)
+  // Rappel du suivi quotidien (DailyLog) — distinct du rappel d'écriture : ne se
+  // déclenche QUE si le suivi du jour est encore vide. "HH:MM", null = désactivé.
+  dailyLogReminderAt String?
+
+  // Préférences guest : notifications de nouvelles entrées de l'owner
+  notifyOnNewEntry  Boolean    @default(false) // toggle global "être notifié"
+  notifyEntryTypes  NoteType[] @default([])    // types à suivre (vide = aucun même si toggle on)
+  // Préférences guest : retours sur tâches et demandes initiées par l'utilisateur (default on)
+  notifyOnTaskUpdate     Boolean @default(true)
+  notifyOnRequestTreated Boolean @default(true)
+  // Préférence partagée : push pour la messagerie directe (default on)
+  notifyMessages         Boolean @default(true)
+
+  // Préférences owner : push pour les actions des guests (default on)
+  notifyOwnerComments    Boolean @default(true)  // nouveau commentaire, réponse, fil rouvert
+  notifyOwnerReactions   Boolean @default(true)  // réaction sur ses notes
+  notifyOwnerTaskChanges Boolean @default(true)  // tâches modifiées/créées par le confident
+  notifyOwnerRequests    Boolean @default(true)  // nouvelle demande de sujet par un guest
+  notifyOwnerSecurity    Boolean @default(true)  // nouvelle connexion sur le compte
+  notifyOwnerReadGate    Boolean @default(true)  // confident a répondu à un verrou de lecture
+  // Préférence guest : décision de l'owner sur ma réponse au verrou (accord/refus)
+  notifyOnReadGateDecision Boolean @default(true)
+  // Préférence partagée owner/guest : notif quand une capsule temporelle s'ouvre
+  notifyOnCapsuleUnlock    Boolean @default(true)
+
+  // Notifications discrètes : masquer le contenu réel sur l'écran verrouillé.
+  pushDiscreet          Boolean @default(false)
+  pushDiscreetTitle     String?
+  pushDiscreetBody      String?
+  pushDiscreetIcon      String?  // clé d'icône préréglée (bell|cloud|note|calendar|chat) ou null
+  pushDiscreetScheduled Boolean @default(false)  // true = discret seulement pendant les plages
+  pushDiscreetSchedule  Json?    // [{ days: number[], from: 'HH:MM', to: 'HH:MM' }]
+  // Mode silencieux : pendant les plages, aucune notification push n'est envoyée
+  // (prioritaire sur le mode discret). L'activité in-app (cloche) reste à jour.
+  pushSilent            Boolean @default(false)
+  pushSilentSchedule    Json?    // même forme que pushDiscreetSchedule
+  // Types de notif « importants » : contournent les modes silencieux ET discret.
+  pushImportantKinds    String[] @default(["security"])
+  timezone              String?  // fuseau IANA capté du navigateur (ex. Europe/Paris)
+  // Owner only : pause TOUTES les notifs push envoyées à ses confidents
+  // (commentaires sur ses notes, capsules, verrou, nouvelle publication…).
+  // L'événement SSE in-app continue d'arriver — la cloche du confident reste
+  // à jour, juste le push OS est suspendu. Utile pour publier en série sans
+  // spammer son confident, ou pour pauser pendant un événement.
+  pauseGuestPush        Boolean @default(false)
+
+  // Budget : solde de départ de la page Budget globale (agrège les notes FINANCE).
+  // Synchronisé entre appareils via auth.me. Owner only en pratique.
+  budgetOpeningBalance  Float   @default(0)
+
+  // Relations
+  entriesAuthored   Entry[]           @relation("EntriesAuthored")
+  comments          Comment[]
+  sharesReceived    EntryShare[]      @relation("Receiver")
+  sessions          Session[]
+  revisions         EntryRevision[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  images            Image[]
+  audios            Audio[]
+  pushSubscriptions PushSubscription[]
+  entryReads        EntryReadStatus[]
+  commentThreadReads CommentThreadRead[]
+  tasks             Task[]
+  reactions         Reaction[]
+  entryRatings      EntryRating[]
+  quizResponses     QuizResponse[]
+  topicRequests     TopicRequest[]    @relation("RequestAuthor")
+  topicRequestsTreated TopicRequest[] @relation("RequestTreater")
+  readGateResponses   ReadGateResponse[] @relation("UserReadGateResponses")
+  dailyLogs         DailyLog[]
+  coupleDays        CoupleDay[]
+  dmSent            DirectMessage[]   @relation("DmSent")
+  dmReceived        DirectMessage[]   @relation("DmReceived")
+  videos            Video[]
+  souvenirTags      SouvenirTag[]
+  passwordResetTokens PasswordResetToken[]
+  aiRecaps          AiRecap[]
+  contacts          Contact[]
+
+  @@index([role])
+  @@index([revokedAt])
+  @@index([notifEnabled, notifReminderTime])
+  @@index([dailyLogReminderAt])
+}
+
+/// Message d'une conversation directe owner ↔ confident, hors-note.
+/// Une conversation est identifiée par l'userId du confident (chaque confident
+/// n'a qu'un seul owner via User.invitedById).
+model DirectMessage {
+  id          String    @id @default(cuid())
+  senderId    String
+  recipientId String
+  content     String
+  gifUrl      String?
+  replyToId   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  editedAt    DateTime?
+  deletedAt   DateTime?
+  readAt      DateTime?
+  version     Int       @default(1) // concurrence optimiste (édition)
+  sender      User @relation("DmSent",     fields: [senderId],    references: [id], onDelete: Cascade)
+  recipient   User @relation("DmReceived", fields: [recipientId], references: [id], onDelete: Cascade)
+  replyTo     DirectMessage?  @relation("DirectMessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     DirectMessage[] @relation("DirectMessageReply")
+  reactions   Reaction[]
+  image       Image?
+  video       Video?
+
+  @@index([senderId, recipientId, createdAt])
+  @@index([recipientId, readAt])
+  @@index([replyToId])
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique // SHA-256, jamais le token en clair
+  userAgent  String?
+  ipHash     String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ============================================================
+// Réinitialisation de mot de passe par email
+// ============================================================
+//
+// Token à usage unique envoyé par email au user qui demande un reset.
+// Le `tokenHash` (SHA-256 du token clair) est stocké côté serveur ;
+// le token clair n'apparaît que dans l'URL du mail.
+//
+// Expiration : 1 heure (vol détecté rapidement vs UX d'utilisateurs qui
+// ouvrent leurs mails en différé). `usedAt` empêche le re-jeu si un
+// attaquant intercepte le lien après usage légitime.
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  /// Mis à jour à la confirmation du reset — empêche la réutilisation.
+  usedAt    DateTime?
+  /// IP hashée + UA au moment de la demande (audit forensic en cas
+  /// d'usage malveillant).
+  ipHash    String?
+  userAgent String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ============================================================
+// Journal
+// ============================================================
+
+enum NoteType {
+  JOURNAL
+  BOOK
+  SERIES
+  MOVIE
+  MUSIC
+  OUTING
+  SHOPPING
+  DEV
+  QUIZZ
+  AGENDA
+  FINANCE
+  // Type personnalisé défini par l'owner (cf. modèle NoteTypeDef). Le comportement
+  // réel (vues/éditeurs) est porté par NoteTypeDef.behavior, pas par cette valeur.
+  CUSTOM
+}
+
+enum EntrySection {
+  MORNING
+  LATE_MORNING
+  NOON
+  AFTERNOON
+  LATE_AFTERNOON
+  EARLY_EVENING
+  EVENING
+  NIGHT
+  FREE
+}
+
+enum Visibility {
+  PRIVATE
+  SHARED_ALL
+  SHARED_SPECIFIC
+}
+
+/// Type de note personnalisé défini par l'owner (à la volée). Hérite d'un
+/// comportement built-in (`behavior`) ; porte son libellé, sa couleur, son icône.
+model NoteTypeDef {
+  id          String   @id @default(cuid())
+  ownerId     String
+  owner       User     @relation("NoteTypeDefsOwned", fields: [ownerId], references: [id], onDelete: Cascade)
+  key         String   // slug unique par owner (dérivé du label)
+  label       String
+  labelPlural String
+  volumeLabel String
+  icon        String   // glyph / emoji
+  colorHex    String   // couleur (#rrggbb) ; colorHexDark ajoutable plus tard sans douleur
+  behavior    NoteType @default(JOURNAL) // comportement built-in hérité (jamais CUSTOM)
+  fields      Json     @default("[]")    // champs meta perso : [{ id, label, type, options? }]
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  entries     Entry[]  @relation("EntryCustomType")
+
+  @@unique([ownerId, key])
+  @@index([ownerId])
+}
+
+model Entry {
+  id        String   @id @default(cuid())
+  authorId  String
+  author    User     @relation("EntriesAuthored", fields: [authorId], references: [id], onDelete: Cascade)
+  // date logique du jour (regroupement timeline)
+  date      DateTime @db.Date
+  // Timestamp précis (ordonnancement intra-journée)
+  createdAt DateTime @default(now())
+
+  section EntrySection?
+  title   String?
+
+  // Contenu Markdown — chiffré applicativement plus tard (libsodium)
+  contentMd String
+
+  // Métadonnées rapides en clair pour stats
+  mood       String?   @db.VarChar(200)
+  sleepHours Float?
+  weather    String?
+  timeLabel  String?   // "HH:MM" ou null (exclusif avec section)
+  noteType   NoteType  @default(JOURNAL)
+  // Type personnalisé (NoteTypeDef) quand noteType === CUSTOM. SetNull = filet de
+  // sécurité ; l'app bloque déjà la suppression d'un type encore utilisé.
+  customTypeId String?
+  customType   NoteTypeDef? @relation("EntryCustomType", fields: [customTypeId], references: [id], onDelete: SetNull)
+  mediaMeta  Json?     // { subject, creator, progressCurrent, progressTotal, season, rating, status }
+  font       String?
+  fontSize   String?
+
+  // Partage
+  visibility        Visibility @default(PRIVATE)
+  commentsLocked    Boolean    @default(false)
+  commentsResolved  Boolean    @default(false)
+  isDraft           Boolean    @default(false)
+  isForConfidant    Boolean    @default(false)
+  isSecret          Boolean    @default(false)  // Boîte de Pandore — invisible même au confident
+  isAdult           Boolean    @default(false)  // Contenu 18+ — preview floutée + question de vérification
+  adultQuestion     String?                     // Question à répondre pour accéder au contenu
+  adultAnswerHash   String?                     // SHA-256 de la réponse (minuscules, trim)
+  adultHints        String[]   @default([])     // Indices progressifs révélés à 10, 20, 30 échecs
+  adultMercyAnswer  String?                     // Si défini : après 100 essais ratés uniques, accès accordé + cette réponse est révélée au confident
+  readGatePrompt            String?
+  readGateAcceptedResponses String[]   @default([])   // Réponses auto-approuvées (insensible à la casse). Vide = tout est manuel.
+  readGateResponses         ReadGateResponse[]
+  unlockAt          DateTime?                   // Capsule temporelle — contenu masqué jusqu'à cette date
+  capsuleSpoiler    String?                     // Teaser visible avant ouverture de la capsule (sealed only)
+  capsuleNotifSentAt DateTime?                  // Marqueur cron : notif "capsule ouverte" déjà envoyée pour ce unlockAt
+  hideUntilAt       DateTime?                   // Délai post-publication — invisible aux guests jusqu'à cette date
+  hiddenNotifSentAt DateTime?                   // Marqueur cron : la notif "nouvelle publication" différée a été envoyée à ce moment-là
+  collectionOnly    Boolean    @default(false)  // true = item de Collection (média possédé/souhaité sans note) — masqué de la Timeline/Journal/Fil
+  links             Json?
+
+  // Sync
+  version   Int       @default(1)
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  shares        EntryShare[]
+  comments      Comment[]
+  tags          EntryTag[]
+  attachments   Attachment[]
+  mediaItems    EntryMedia[]
+  revisions     EntryRevision[]
+  reads         EntryReadStatus[]
+  notifications Notification[]
+  reactions     Reaction[]
+  ratings       EntryRating[]
+  quizResponses QuizResponse[]
+  linkedRequests TopicRequest[]    @relation("RequestEntry")
+  videos        Video[]
+
+  // Colonne full-text search maintenue par trigger PostgreSQL (cf. migration
+  // 20260509_entry_fts). Prisma ne supporte pas `tsvector` nativement, donc
+  // on la déclare en `Unsupported` pour qu'il sache qu'elle existe sans
+  // essayer de la gérer. L'index GIN associé est aussi hors Prisma (créé
+  // directement en SQL dans la migration FTS).
+  searchVector Unsupported("tsvector")?
+
+  @@index([authorId, date])
+  @@index([authorId, updatedAt])
+  @@index([visibility])
+  // Index GIN sur searchVector — créé par la migration FTS, déclaré ici
+  // pour informer Prisma (sinon il propose de le supprimer à chaque diff).
+  @@index([searchVector], type: Gin, name: "Entry_searchVector_idx")
+}
+
+model EntryShare {
+  entryId    String
+  receiverId String
+  entry      Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  receiver   User     @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  canComment Boolean  @default(false)
+  sharedAt   DateTime @default(now())
+
+  @@id([entryId, receiverId])
+  @@index([receiverId])
+}
+
+model EntryRevision {
+  id        String   @id @default(cuid())
+  entryId   String
+  entry     Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  contentMd String
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+  reason    String? // 'manual_save', 'pre_sync', 'auto_recover'
+
+  @@index([entryId, createdAt])
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  entryId   String
+  entry     Entry     @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content    String
+  gifUrl     String?
+  anchorText String?   // texte sélectionné dans l'entrée (null = commentaire général)
+  parentId  String?
+  parent    Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies   Comment[] @relation("CommentThread")
+  replyToId String?
+  replyTo   Comment?  @relation("CommentReplyTo", fields: [replyToId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replyToMe Comment[] @relation("CommentReplyTo")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt     DateTime?
+  /// Numéro de révision incrémenté à chaque édition. Permet aux mutations
+  /// de détecter les conflits (owner + confident éditant simultanément) :
+  /// le client envoie la version qu'il a vue, le serveur rejette si elle
+  /// ne matche plus la valeur courante (CONFLICT). Sans ça, le dernier
+  /// write gagnait en silence.
+  version       Int       @default(1)
+  notifications Notification[]
+  reactions     Reaction[]
+  image         Image?
+  /// Statuts de lecture de fil quand ce commentaire est la racine du fil (BUG-04).
+  threadReads   CommentThreadRead[] @relation("CommentThreadReads")
+
+  @@index([entryId, createdAt])
+  @@index([authorId])
+}
+
+// ============================================================
+// Notifications
+// ============================================================
+
+enum NotifType {
+  COMMENT_NEW      // Owner : un guest a commenté
+  COMMENT_REPLY    // Guest : l'owner a répondu à son commentaire
+  TASK_UPDATED     // Tâche modifiée (statut ou priorité)
+  THREAD_REOPENED  // Owner : un guest a rouvert un fil résolu
+  REACTION_NEW     // Réaction ajoutée sur une entrée ou un commentaire
+  ENTRY_NEW        // Guest : l'owner a publié une nouvelle entrée (selon préférences)
+  ENTRY_EDIT       // Guest : l'owner a ajouté un bloc edit (ajout tardif) à une entrée publiée
+  REQUEST_TREATED  // Guest : l'owner a traité (DONE / REJECTED) une demande de l'auteur
+  READ_GATE_RESPONSE // Owner : un confident a répondu à un verrou de lecture (à valider)
+  READ_GATE_DECIDED  // Guest : l'owner a accepté ou refusé sa réponse au verrou
+  CAPSULE_UNLOCKED   // Owner + confidents : une capsule temporelle vient de s'ouvrir
+  MENTION_NEW        // Quelqu'un t'a mentionné·e (@) dans une note ou un commentaire
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotifType
+  read       Boolean   @default(false)
+  archived   Boolean   @default(false)
+  entryId   String?
+  entry     Entry?    @relation(fields: [entryId], references: [id], onDelete: SetNull)
+  commentId String?
+  comment   Comment?  @relation(fields: [commentId], references: [id], onDelete: SetNull)
+  taskId    String?
+  task      Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  meta      Json?     // Détails du changement (ex: { from: 'OPEN', to: 'DONE', field: 'status' })
+  createdAt DateTime  @default(now())
+
+  @@index([userId, read])
+  @@index([userId, archived])
+  @@index([userId, createdAt])
+  @@index([taskId])
+}
+
+enum TagKind {
+  EMOTION
+  THEME
+  PERSON
+  PLACE
+  OTHER
+}
+
+model Tag {
+  id      String     @id @default(cuid())
+  ownerId String
+  name    String
+  color   String?
+  kind    TagKind
+  entries EntryTag[]
+
+  @@unique([ownerId, name, kind])
+  @@index([ownerId])
+}
+
+model EntryTag {
+  entryId String
+  tagId   String
+  entry   Entry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, tagId])
+  @@index([tagId])
+}
+
+// ============================================================
+// Bullet journal (Owner only)
+// ============================================================
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  LOCAL_DONE
+  TO_TEST
+  DEPLOYED
+  MIGRATED
+  CANCELLED
+  SCHEDULED
+}
+
+model Task {
+  id             String     @id @default(cuid())
+  ownerId        String
+  owner          User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title          String
+  notes          String?
+  status         TaskStatus
+  dueDate        DateTime?
+  scheduledFor   DateTime?
+  completedAt    DateTime?
+  collectionId   String?
+  recurrenceRule String?
+  parentTaskId   String?
+  category       String?
+  taskType       String?    @db.VarChar(50)
+  priority       String?    // HIGH | MEDIUM | LOW (la migration crée la colonne en TEXT)
+  sortOrder      Float?     // null = order by createdAt
+  createdBy      String?    // userId of the person who created the task
+  version        Int        @default(1)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  deletedAt      DateTime?
+
+  notifications  Notification[]
+
+  @@index([ownerId, status])
+  @@index([ownerId, dueDate])
+}
+
+// État global du jour, indépendant des entrées (les entrées gardent leurs propres champs)
+model DailyLog {
+  id          String   @id @default(cuid())
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  mood        String?
+  sleepHours  Float?
+  weather     String?
+  energy      Int?     // 1-5
+  anxiety     Int?     // 1-5
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([ownerId, date])
+  @@index([ownerId, date])
+  @@index([ownerId, updatedAt])
+}
+
+enum CoupleColor {
+  RED
+  BLUE
+  GREEN
+  RED_GREEN // journée partagée : des bons moments ET des tensions le même jour
+}
+
+/// Baromètre du couple : une couleur par jour (rouge/neutre/vert/partagée).
+/// `setAt` null = couleur jamais posée explicitement → neutre automatique,
+/// toujours éditable. Sinon = horodatage de la pose → verrou 24 h.
+model CoupleDay {
+  id             String      @id @default(cuid())
+  ownerId        String
+  owner          User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  date           DateTime    @db.Date
+  color          CoupleColor @default(BLUE)
+  setAt          DateTime?
+  linkedEntryIds Json?       // string[] — ids de notes du journal expliquant la couleur
+  awayLabel      String?     // tooltip d'un jour d'absence ; présent = "pas ensemble"
+  version        Int         @default(1)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  @@unique([ownerId, date])
+  @@index([ownerId, date])
+  @@index([ownerId, updatedAt])
+}
+
+/// Récap IA mensuel — synthèse générée par Claude (plan Max) d'un mois de notes.
+/// Owner-only, privé (jamais exposé aux confidents). Régénérable : un seul récap
+/// par (ownerId, période). La génération passe par la route REST /ai/recap.
+model AiRecap {
+  id          String   @id @default(cuid())
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  period      String   // "YYYY-MM"
+  contentMd   String
+  model       String
+  entryCount  Int      @default(0)
+  generatedAt DateTime @default(now())
+
+  @@unique([ownerId, period])
+  @@index([ownerId])
+}
+
+enum CollectionKind {
+  GOAL
+  HABIT
+  PROJECT
+  LIST
+}
+
+model Collection {
+  id      String         @id @default(cuid())
+  ownerId String
+  name    String
+  kind    CollectionKind
+  color   String?
+
+  @@index([ownerId, kind])
+}
+
+model HabitLog {
+  id      String   @id @default(cuid())
+  ownerId String
+  habitId String
+  date    DateTime @db.Date
+  done    Boolean
+  note    String?
+
+  @@unique([ownerId, habitId, date])
+  @@index([ownerId, date])
+}
+
+// ============================================================
+// Médias
+// ============================================================
+
+enum MediaKind {
+  BOOK
+  MOVIE
+  SERIES
+  ALBUM
+  GAME
+  MUSIC
+}
+
+enum MediaStatus {
+  CONSUMED
+  IN_PROGRESS
+  BACKLOG
+  FAVORITE
+}
+
+model MediaItem {
+  id          String       @id @default(cuid())
+  ownerId     String
+  kind        MediaKind
+  title       String
+  creator     String?
+  externalId  String?
+  externalSrc String?
+  coverUrl    String?
+  rating      Int?
+  status      MediaStatus
+  consumedAt  DateTime?
+  notes       String?
+  entries     EntryMedia[]
+
+  @@unique([ownerId, externalSrc, externalId])
+  @@index([ownerId, kind])
+}
+
+model EntryMedia {
+  entryId String
+  mediaId String
+  emotion String?
+  entry   Entry     @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  media   MediaItem @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, mediaId])
+  @@index([mediaId])
+}
+
+// ============================================================
+// Pièces jointes
+// ============================================================
+
+model Attachment {
+  id         String   @id @default(cuid())
+  ownerId    String
+  entryId    String?
+  entry      Entry?   @relation(fields: [entryId], references: [id], onDelete: SetNull)
+  filename   String
+  mime       String
+  sizeBytes  Int
+  storageKey String
+  createdAt  DateTime @default(now())
+
+  @@index([ownerId])
+  @@index([entryId])
+}
+
+// ============================================================
+// Images
+// ============================================================
+
+model Audio {
+  id        String   @id @default(cuid())
+  data      String   // base64, sans préfixe data URI
+  mimeType  String
+  filename  String
+  size      Int      // octets originaux
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  entryId   String?
+  createdAt DateTime @default(now())
+
+  @@index([authorId])
+}
+
+model Image {
+  id        String   @id @default(cuid())
+  data      String   // base64, sans préfixe data URI
+  mimeType  String
+  size      Int      // octets originaux (avant base64)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  entryId   String?
+  directMessageId String?        @unique
+  directMessage   DirectMessage? @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+  commentId String?        @unique
+  comment   Comment?       @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([authorId])
+}
+
+/// Vidéo attachée à une note ou à un message direct.
+/// - Notes (entry) : stockée sur disque (filePath), taille jusqu'à 500 Mo, range requests.
+/// - Messages directs : stockée en base64 (data), plafond 15 Mo, rétrocompat.
+model Video {
+  id              String   @id @default(cuid())
+  data            String?  // base64 (DM legacy) — null pour les vidéos sur notes
+  filePath        String?  // chemin relatif sur disque (ex: uploads/videos/<id>.mp4) — null pour les DM legacy
+  mimeType        String
+  filename        String
+  size            Int      // octets originaux
+  authorId        String
+  author          User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  directMessageId String?        @unique
+  directMessage   DirectMessage? @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+  entryId         String?
+  entry           Entry?   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+
+  @@index([authorId])
+  @@index([entryId])
+}
+
+/// Tags libres associés à un média souvenir (identifié par son URL src).
+/// Indépendant du markdown — permet le filtrage rapide sans re-parser le contenu.
+model SouvenirTag {
+  id        String   @id @default(cuid())
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  mediaSrc  String   // URL du média (/images/xxx ou /videos/xxx)
+  entryId   String   // note parente (pour contexte/affichage)
+  tag       String   @db.VarChar(80)
+  createdAt DateTime @default(now())
+
+  @@unique([authorId, mediaSrc, tag])
+  @@index([authorId])
+  @@index([authorId, tag])
+}
+
+// ============================================================
+// Push subscriptions
+// ============================================================
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ============================================================
+// Audit / sécurité
+// ============================================================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entryId   String?
+  metadata  Json?
+  ipHash    String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([entryId, createdAt])
+  @@index([action, createdAt])
+}
+
+// ============================================================
+// Invitations Guest
+// ============================================================
+
+model Invitation {
+  id              String      @id @default(cuid())
+  email           String
+  tokenHash       String      @unique
+  guestAccess     GuestAccess
+  canComment      Boolean     @default(false)
+  canViewCalendar Boolean     @default(false)
+  canViewAgenda   Boolean     @default(false)
+  canViewBudget   Boolean     @default(false)
+  invitedById     String
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime    @default(now())
+
+  @@index([invitedById])
+  @@index([expiresAt])
+}
+
+model EntryReadStatus {
+  userId  String
+  entryId String
+  readAt  DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entry Entry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@id([userId, entryId])
+  @@index([userId])
+}
+
+// ============================================================
+// Lecture d'un fil de commentaires par utilisateur (1 par couple thread/user)
+// ============================================================
+// Sert au statut du Fil (BUG-04) : un fil dont le dernier commentaire n'est PAS
+// de moi compte comme « à répondre » uniquement s'il est postérieur à mon
+// `readAt`. Contrairement à EntryReadStatus, `readAt` est mis à jour à CHAQUE
+// ouverture du fil (la mutation pose explicitement `readAt: now`), et c'est
+// valable owner ET confident. `threadRootId` = id du commentaire racine du fil.
+model CommentThreadRead {
+  userId       String
+  threadRootId String
+  readAt       DateTime @default(now())
+
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rootComment Comment @relation("CommentThreadReads", fields: [threadRootId], references: [id], onDelete: Cascade)
+
+  @@id([userId, threadRootId])
+  @@index([userId])
+}
+
+// ============================================================
+// Notation favoris / nul par utilisateur (1 par couple entry/user)
+// ============================================================
+//
+//  - FAVORITE : l'entrée est mise en avant pour cet utilisateur.
+//  - LOW      : l'entrée est considérée comme "nulle" (sans intérêt) ;
+//               sera exclue des souvenirs sauf si quelqu'un d'autre l'a
+//               aussi marquée en favori.
+//
+// Mutuellement exclusif : une seule ligne par (entryId, userId).
+// L'owner peut voir toutes les ratings (de tous les confidents).
+// Un confident ne voit que sa propre notation + celle de l'owner.
+
+enum EntryRatingValue {
+  FAVORITE
+  LOW
+}
+
+model EntryRating {
+  id        String           @id @default(cuid())
+  entryId   String
+  entry     Entry            @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  value     EntryRatingValue
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([entryId, userId])
+  @@index([entryId])
+  @@index([userId])
+}
+
+// ============================================================
+// Réponses de quiz par utilisateur (note QUIZZ — 1 par couple entry/user)
+// ============================================================
+//
+// L'owner définit le quiz dans `Entry.mediaMeta.quizQuestions`. Chaque
+// utilisateur (owner inclus) a au plus une réponse par quiz. `answers` stocke
+// la saisie + la correction par question (JSON). `score`/`total` = résultat.
+// La correction est faite côté serveur (`quiz.submit`) : les confidents ne
+// reçoivent jamais les bonnes réponses avant d'avoir validé.
+// L'owner voit toutes les réponses ; un confident ne voit que la sienne.
+
+model QuizResponse {
+  id        String   @id @default(cuid())
+  entryId   String
+  entry     Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers   Json     // { [questionId]: { selected?: number[], text?: string, correct: boolean, selfCorrected?: boolean } }
+  score     Int      @default(0)
+  total     Int      @default(0)
+  submitted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([entryId, userId])
+  @@index([entryId])
+  @@index([userId])
+}
+
+// ============================================================
+// Réactions emoji (style Slack/iMessage)
+// ============================================================
+
+model Reaction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String   @db.VarChar(10)
+  entryId   String?
+  entry     Entry?   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  commentId String?
+  comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  directMessageId String?
+  directMessage   DirectMessage? @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, entryId, emoji])
+  @@unique([userId, commentId, emoji])
+  @@unique([userId, directMessageId, emoji])
+  @@index([entryId])
+  @@index([commentId])
+  @@index([directMessageId])
+}
+
+// ============================================================
+// Boîte à demandes : sujets que le confident souhaiterait que
+// l'owner traite (parler d'une personne, d'une période, etc.)
+// ============================================================
+
+enum TopicRequestStatus {
+  PENDING       // par défaut, à l'arrivée
+  IN_PROGRESS   // l'owner a commencé à y répondre
+  DONE          // traité (peut pointer sur une entry)
+  REJECTED      // refusé
+}
+
+model TopicRequest {
+  id          String              @id @default(cuid())
+  title       String              @db.VarChar(200)
+  description String?             // markdown court, optionnel
+  status      TopicRequestStatus  @default(PENDING)
+
+  // Le confident qui a posé la question
+  authorId    String
+  author      User                @relation("RequestAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  // L'owner qui a traité (set au moment où on passe le status)
+  treatedById String?
+  treatedBy   User?               @relation("RequestTreater", fields: [treatedById], references: [id], onDelete: SetNull)
+  ownerNote   String?             // mot de l'owner au confident (raison du refus, etc.)
+  linkedEntryId String?           // si DONE et qu'une note a été écrite en réponse
+  linkedEntry Entry?              @relation("RequestEntry", fields: [linkedEntryId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  treatedAt   DateTime?
+
+  @@index([authorId, status])
+  @@index([status, createdAt])
+}
+
+model ReadGateResponse {
+  id        String    @id @default(cuid())
+  entry     Entry     @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  entryId   String
+  guest     User      @relation("UserReadGateResponses", fields: [guestId], references: [id], onDelete: Cascade)
+  guestId   String
+  response  String
+  approved  Boolean?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([entryId, guestId])
+  @@index([entryId])
+  @@index([guestId])
+}
+
+/// Carnet d'adresses de l'owner (page /contacts). Données de référence, pas des
+/// notes de journal : stockage relationnel propre, lecture serveur (owner +
+/// confident CONFIDANT, en lecture seule), pas de sync Dexie. L'owner seul
+/// crée/édite/supprime. Tous les champs sauf les noms sont optionnels.
+model Contact {
+  id        String   @id @default(cuid())
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId   String
+  firstName String   @default("") // prénom
+  lastName  String   @default("") // nom
+  relation  String?  // lien : ami / famille / enfant…
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  birthday  String?  // anniversaire, ISO "YYYY-MM-DD" (année incluse)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+}

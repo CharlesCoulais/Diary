@@ -1,0 +1,30 @@
+{
+  "name": "carnet",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Journal intime cozy — monorepo",
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream dev",
+    "build": "pnpm -r build",
+    "build:prod": "pnpm --filter @carnet/api db:generate && pnpm --filter @carnet/web build && pnpm --filter @carnet/api build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:migrate": "pnpm --filter @carnet/api db:migrate",
+    "db:generate": "pnpm --filter @carnet/api db:generate",
+    "db:studio": "pnpm --filter @carnet/api db:studio",
+    "ship": "pnpm --filter @carnet/api build && railway up --service generous-sparkle"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.12.3"
+}

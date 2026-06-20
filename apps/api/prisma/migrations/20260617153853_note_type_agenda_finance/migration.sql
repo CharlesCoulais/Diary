@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "NoteType" ADD VALUE 'AGENDA';
+ALTER TYPE "NoteType" ADD VALUE 'FINANCE';

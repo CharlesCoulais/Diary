@@ -1,0 +1,1657 @@
+@import './tokens.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Filet de sécurité contre les scrolls horizontaux indésirables (souvent un
+   élément qui dépasse de quelques pixels — input mal contraint, viewport
+   meta, etc.). Les vrais scrolls horizontaux (code blocks, tables) restent
+   possibles via overflow-x:auto sur leurs conteneurs internes. */
+html, body { overflow-x: clip; }
+
+/* Layout deux colonnes : la colonne de gauche (sibling précédent du panneau
+ * droit) reçoit le padding-bottom qui réserve la place pour la bulle de chat
+ * flottante + BackToTop. La colonne de droite reste sans padding car son
+ * contenu (panneau de lecture) gère sa propre hauteur en sticky h-dvh.
+ *
+ * `:has()` est supporté par Chrome/Safari/Firefox récents (≥2023).
+ */
+@media (min-width: 1024px) {
+  *:has(> [data-right-panel]) > *:not([data-right-panel]) {
+    padding-bottom: 5rem;
+  }
+}
+
+/* BackToTop & ChatFab : position variable selon breakpoint.
+ *
+ *   --bottomnav-height : hauteur RÉELLE du BottomNav, mesurée à l'exécution par
+ *     `useBottomNavHeight` (SET-19). Inclut déjà le `safe-bottom` du nav. La
+ *     valeur ci-dessous n'est qu'un repli avant la mesure JS. Tout dérive de là,
+ *     plus de constantes magiques `5rem`/`9rem` qui cassaient si le nav changeait
+ *     de hauteur.
+ *   --chatfab-bottom : position du FAB / de la bulle du chat (bas-droite) — juste
+ *     au-dessus du nav.
+ *   --backtotop-bottom : position du bouton "remonter en haut" — AU-DESSUS du FAB
+ *     chat (sinon superposition pile au même point), donc + hauteur du FAB + gap.
+ */
+:root {
+  --bottomnav-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  --chatfab-bottom: calc(var(--bottomnav-height) + 1rem);
+  --backtotop-bottom: calc(var(--chatfab-bottom) + 3.5rem); /* FAB 48px + gap 0.5rem */
+}
+@media (min-width: 1024px) {
+  /* Pas de BottomNav sur desktop → offsets fixes, indépendants de la mesure. */
+  :root {
+    --chatfab-bottom: 1.5rem;
+    --backtotop-bottom: 5.5rem; /* bulle 48px + bottom 1.5rem + gap 0.5rem */
+  }
+}
+
+/* Pile de bannières système (offline / push-health / déploiement) empilées en
+   haut sans se superposer (BUG-07). Le conteneur est `pointer-events-none` pour
+   ne jamais bloquer le haut de l'écran quand il est vide (la `safe-area` ne
+   crée donc pas de zone morte) ; chaque bannière rétablit `pointer-events`.
+   Seule la bannière du HAUT reçoit le retrait `safe-area-inset-top` (sa couleur
+   de fond déborde ainsi sous l'encoche iOS). */
+.banner-stack > * { pointer-events: auto; }
+.banner-stack > :first-child { padding-top: max(0.5rem, env(safe-area-inset-top, 0px)); }
+
+/* Hide scrollbar on overflow-x containers while keeping scroll gesture */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+
+/* Réserve l'espace du home-indicator iOS en bas (notamment sur la BottomNav
+   et tout élément fixed bottom qui doit rester au-dessus du gesture). */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Zone tactile — élargit la cible d'un petit bouton-icône à ≥44px SANS changer
+   son visuel, et UNIQUEMENT sur écran tactile (pointer: coarse). Le pseudo-
+   élément (transparent) capte les taps → le clic est dispatché au bouton.
+   Taille en px (immune au root html scalé). ⚠️ À réserver aux boutons ISOLÉS :
+   sur des contrôles collés, les zones de 44px se chevaucheraient. Audit TRANS-02.
+   - `.tap`     : pour un bouton statique (on lui pose `position: relative`).
+   - `.tap-abs` : pour un bouton DÉJÀ positionné (absolute/fixed) — on ne touche
+                  pas à `position` (sinon on casserait son placement). */
+@media (pointer: coarse) {
+  .tap { position: relative; }
+  .tap::after,
+  .tap-abs::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    min-width: 44px;
+    min-height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Mention @ — chip discret (commentaires). Dans les notes, le rendu passe par
+   AnnotatedReader (gras + couleur accent) ; ici c'est le rendu des commentaires. */
+.mention-chip {
+  color: var(--color-accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Spoiler — texte caché jusqu'au clic.
+   Syntaxe `||texte||` dans le markdown, transformée en `<span class="spoiler">`.
+   Click → ajout de `.spoiler-revealed` qui retire le flou définitivement
+   (pour cette session ; navigation = re-cache). */
+.spoiler {
+  background-color: rgb(var(--color-text-muted-rgb) / 0.55);
+  color: transparent;
+  border-radius: 4px;
+  padding: 0 0.15em;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 200ms var(--ease-cozy), color 200ms var(--ease-cozy);
+}
+.spoiler:hover {
+  background-color: rgb(var(--color-text-muted-rgb) / 0.45);
+}
+.spoiler-revealed,
+.spoiler.spoiler-revealed {
+  background-color: rgb(var(--color-text-muted-rgb) / 0.08);
+  color: inherit;
+  cursor: text;
+  user-select: text;
+}
+
+/* Spoiler image — version block avec flou sur l'image + label overlay. */
+.spoiler-img {
+  position: relative;
+  display: block;
+  cursor: pointer;
+  border-radius: 8px;
+  overflow: hidden;
+  user-select: none;
+}
+.spoiler-img img {
+  filter: blur(20px);
+  transition: filter 300ms var(--ease-cozy);
+  pointer-events: none;
+}
+.spoiler-img-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.spoiler-img-badge {
+  background: rgba(0, 0, 0, 0.58);
+  color: #fff;
+  font-size: 0.82rem;
+  font-family: system-ui, sans-serif;
+  font-weight: 500;
+  padding: 0.5rem 1.1rem;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.spoiler-img.spoiler-revealed {
+  cursor: default;
+}
+.spoiler-img.spoiler-revealed img {
+  filter: none;
+}
+.spoiler-img.spoiler-revealed .spoiler-img-label {
+  display: none;
+}
+
+.spoiler-media {
+  position: relative;
+  display: block;
+  cursor: pointer;
+  border-radius: 8px;
+  overflow: hidden;
+  user-select: none;
+}
+.spoiler-media audio,
+.spoiler-media video {
+  filter: blur(8px);
+  pointer-events: none;
+  transition: filter 300ms var(--ease-cozy);
+}
+.spoiler-media-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-bg-elevated) 60%, transparent);
+  pointer-events: none;
+}
+.spoiler-media.spoiler-revealed {
+  cursor: default;
+}
+.spoiler-media.spoiler-revealed audio,
+.spoiler-media.spoiler-revealed video {
+  filter: none;
+  pointer-events: auto;
+}
+.spoiler-media.spoiler-revealed .spoiler-media-label {
+  display: none;
+}
+
+/* Scrollbar discrète, cohérente avec le design (fond transparent + thumb subtil) */
+.scrollbar-soft {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(127, 127, 127, 0.25) transparent;
+}
+.scrollbar-soft::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-soft::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-soft::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.22);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.scrollbar-soft::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 127, 127, 0.45);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+.scrollbar-soft::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@layer base {
+  /* Reset browser default yellow for <mark> — our annotation classes control the color */
+  mark {
+    background-color: transparent;
+    color: inherit;
+  }
+
+  html {
+    /* Verrouille la taille de police racine à 12px (au lieu du 16px navigateur
+       par défaut) pour donner à toute l'app une métrique resserrée et
+       cohérente entre Owner et Confident, indépendamment des réglages
+       "Police par défaut" / "Taille minimale" de Chrome ou Android. Toutes
+       les utilités Tailwind en rem (text-*, w-*, h-*, gap-*, p-*, m-*…) sont
+       réduites de 25 % par rapport à la base 16px : ex. text-sm = 10.5px,
+       w-7 = 21px. Les tailles qui doivent rester en pixels physiques
+       (avatars, boutons d'action) sont en valeurs arbitraires Tailwind
+       (`w-[28px]` etc.) pour ignorer cette base. */
+    font-size: 12px;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Désactive le pull-to-refresh natif (Chrome Android) — on en a un custom dans PullToRefresh.tsx */
+    overscroll-behavior-y: contain;
+    /* Empêche iOS de gonfler le texte en orientation paysage */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    min-height: 100vh;
+    min-height: 100dvh;
+    transition: background-color 300ms var(--ease-cozy), color 300ms var(--ease-cozy);
+    overscroll-behavior-y: contain;
+  }
+
+  ::selection {
+    background-color: var(--color-accent-soft);
+    color: var(--color-text-primary);
+  }
+
+  /* Focus visible doux et chaud, jamais bleu Chrome */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Plus de forçage des inputs à 16px sur tactile : chaque champ garde sa vraie
+     taille (text-sm = 12px pour les petits, text-2xl pour le titre…), aligné sur
+     le reste de l'UI compacte — sinon les inputs paraissaient « énormes » à côté
+     du reste. L'auto-zoom-au-focus d'iOS Safari (qui se déclenche sous 16px) est
+     désormais neutralisé par `maximum-scale=1` dans le <meta viewport>
+     (index.html) ; le pinch-zoom manuel reste possible sur iOS 10+.
+     ⚠️ À confirmer sur device réel : si un zoom au focus réapparaissait sur une
+     vieille version iOS, remettre `font-size: 16px` sur les inputs tactiles ici. */
+}
+
+/* Placeholder Tiptap */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-muted);
+  font-family: 'Lora', Georgia, serif;
+  font-style: italic;
+  font-size: 17px;
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* Mise en forme riche dans l'éditeur */
+.tiptap h1 {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: var(--color-text-primary);
+}
+.tiptap h2 {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-top: 1.1rem;
+  margin-bottom: 0.4rem;
+  color: var(--color-text-primary);
+}
+.tiptap h3 {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 0.9rem;
+  margin-bottom: 0.3rem;
+  color: var(--color-text-primary);
+}
+.tiptap strong { font-weight: 700; }
+.tiptap em { font-style: italic; }
+.tiptap s { text-decoration: line-through; opacity: 0.7; }
+.tiptap code {
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 0.82em;
+  background: var(--color-bg-primary);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  color: var(--color-accent);
+}
+.tiptap blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 1rem;
+  margin: 0.75rem 0;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* ─── Repli des titres (édition, extension HeadingFold) ─── */
+.heading-fold-hidden { display: none !important; }
+.heading-fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: 0.25em;
+  margin-left: -0.1em;        /* chevron inline, jamais rogné quel que soit le conteneur */
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--color-text-muted) 45%, transparent);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.heading-fold-toggle:hover {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-text-muted) 10%, transparent);
+}
+.heading-fold-toggle svg { transition: transform 0.15s; }
+.heading-fold-toggle.is-folded svg { transform: rotate(-90deg); }
+.tiptap ul {
+  list-style: disc;
+  padding-left: 1.4rem;
+  margin: 0.5rem 0;
+}
+.tiptap ol {
+  list-style: decimal;
+  padding-left: 1.4rem;
+  margin: 0.5rem 0;
+}
+.tiptap li { margin: 0.15rem 0; }
+.tiptap a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tiptap a:hover { opacity: 0.8; }
+.tiptap p { margin: 0.25rem 0; }
+
+/* ─── Tables ─── */
+.tiptap table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.875em;
+  overflow-x: auto;
+  display: block;
+}
+.tiptap table th,
+.tiptap table td {
+  border: 1px solid color-mix(in srgb, var(--color-text-muted) 20%, transparent);
+  padding: 0.4rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+  min-width: 80px;
+}
+.tiptap table th {
+  background: color-mix(in srgb, var(--color-text-muted) 7%, transparent);
+  font-weight: 600;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+.tiptap table tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--color-text-muted) 3%, transparent);
+}
+/* Cellule sélectionnée (édition) */
+.tiptap table .selectedCell::after {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  content: "";
+  left: 0; right: 0; top: 0; bottom: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+.tiptap table td,
+.tiptap table th { position: relative; }
+
+/* ─── Ancre de branche dans le texte ─── */
+.tiptap .branch-anchor-mark {
+  border-bottom: 1.5px dashed var(--color-accent);
+  cursor: default;
+}
+/* Icône ↳ injectée après le texte ancré */
+.tiptap .branch-anchor-mark::after {
+  content: '↳';
+  display: inline-block;
+  font-size: 10px;
+  color: var(--color-accent);
+  margin-left: 2px;
+  vertical-align: super;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+  font-style: normal;
+  font-family: system-ui, sans-serif;
+}
+
+/* Même style en mode lecture (AnnotatedReader) */
+.branch-anchor-inline {
+  border-bottom: 1.5px dashed var(--color-accent);
+}
+.branch-anchor-inline::after {
+  content: '↳';
+  display: inline-block;
+  font-size: 10px;
+  color: var(--color-accent);
+  margin-left: 2px;
+  vertical-align: super;
+  line-height: 1;
+  opacity: 0.6;
+  font-style: normal;
+  font-family: system-ui, sans-serif;
+}
+
+/* ─── Panneau branche ─── */
+.branch-panel {
+  position: relative;
+  margin: 0.75rem 0;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 5%, var(--color-bg-primary));
+  overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+
+/* Header — clic pour plier/déplier */
+.branch-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.branch-panel.is-open > .branch-header {
+  border-bottom-color: color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+.branch-toggle {
+  color: var(--color-accent);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.branch-anchor-preview {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background-color 0.12s;
+}
+.branch-anchor-preview:hover {
+  background-color: rgba(127, 127, 127, 0.08);
+}
+.branch-anchor-empty {
+  opacity: 0.5;
+  font-style: normal;
+}
+.branch-anchor-input {
+  font-size: 0.78rem;
+  color: var(--color-text-primary);
+  font-style: italic;
+  flex: 1;
+  min-width: 0;
+  background: var(--color-bg-primary, transparent);
+  border: 1px solid var(--color-accent, rgba(127,127,127,0.3));
+  border-radius: 4px;
+  padding: 2px 6px;
+  outline: none;
+}
+.branch-drag-handle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 22px;
+  cursor: grab;
+  color: var(--color-text-muted);
+  opacity: 0.3;
+  transition: opacity 0.15s;
+  border-radius: 4px;
+  /* Indispensable au polyfill mobile-drag-drop : sans ça le navigateur intercepte
+     les touchmove pour scroller avant que le polyfill ne puisse déclencher le drag. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* Android Chrome / Samsung Internet : neutralise le menu contextuel long-press
+     et le flash bleu de tap pour ne pas court-circuiter le drag tactile. */
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.branch-drag-handle:active { cursor: grabbing; }
+/* Sur mobile, pas de :hover stable — on rend la poignée toujours visible (mais discrète) */
+.branch-header .branch-drag-handle { opacity: 0.5; }
+@media (hover: hover) {
+  .branch-header .branch-drag-handle { opacity: 0.3; }
+  .branch-header:hover .branch-drag-handle { opacity: 0.6; }
+}
+
+.branch-float-btn,
+.branch-close-btn,
+.branch-delete-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.branch-float-btn:hover,
+.branch-close-btn:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
+}
+.branch-delete-btn:hover {
+  background: color-mix(in srgb, var(--color-error, #e05555) 12%, transparent);
+  color: var(--color-error, #e05555);
+}
+.branch-close-btn { font-size: 1.2rem; line-height: 1; }
+
+/* Corps — masqué via max-height quand replié (garde le DOM intact) */
+.branch-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease, padding 0.25s ease;
+  padding: 0 0.75rem;
+}
+.branch-panel.is-open > .branch-body {
+  /* Plafond raisonnable + scroll interne : avant, le contenu au-delà de la
+     hauteur max était coupé (overflow hidden) et inaccessible en édition. */
+  max-height: 65vh;
+  overflow-y: auto;
+  padding: 0.6rem 0.75rem;
+}
+
+/* Mode flottant — le panneau se superpose à la page */
+.branch-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 49;
+  backdrop-filter: blur(2px);
+}
+.branch-panel.is-floating {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, 92vw);
+  max-height: 72vh;
+  overflow-y: auto;
+  z-index: 50;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+}
+.branch-panel.is-floating > .branch-body {
+  max-height: none;
+  overflow: visible;
+}
+
+/* Flash d'attention quand on clique sur l'ancre */
+@keyframes branch-flash {
+  0%, 100% { box-shadow: none; }
+  30% { box-shadow: 0 0 0 3px var(--color-accent); }
+}
+.branch-flash {
+  animation: branch-flash 1.2s ease;
+}
+
+/* ─── Panneau Edit (ajout tardif) ─── */
+.edit-block-panel {
+  position: relative;
+  margin: 1rem 0;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, #d97706 30%, transparent);
+  background: color-mix(in srgb, #d97706 6%, var(--color-bg-primary));
+  overflow: visible;
+}
+
+.edit-block-panel > :first-child {
+  border-radius: 9px 9px 0 0;
+}
+
+.edit-block-panel > :last-child {
+  border-radius: 0 0 9px 9px;
+}
+
+.edit-block-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, #d97706 20%, transparent);
+  background: color-mix(in srgb, #d97706 8%, var(--color-bg-primary));
+  user-select: none;
+}
+
+.edit-block-icon {
+  color: #d97706;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.edit-block-label {
+  font-size: 0.72rem;
+  font-style: italic;
+  color: color-mix(in srgb, #d97706 90%, var(--color-text-muted));
+  font-family: system-ui, sans-serif;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edit-block-delete-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.edit-block-delete-btn:hover {
+  background: color-mix(in srgb, var(--color-error, #e05555) 12%, transparent);
+  color: var(--color-error, #e05555);
+}
+
+.edit-block-body {
+  padding: 0.6rem 0.75rem;
+}
+
+.edit-block-date-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.edit-block-date-btn:hover {
+  text-decoration: underline;
+  text-decoration-style: dashed;
+}
+
+.edit-block-date-input {
+  font-size: 0.72rem;
+  font-style: italic;
+  color: color-mix(in srgb, #d97706 90%, var(--color-text-muted));
+  background: color-mix(in srgb, #d97706 10%, var(--color-bg-primary));
+  border: 1px solid color-mix(in srgb, #d97706 40%, transparent);
+  border-radius: 5px;
+  padding: 0 0.4rem;
+  height: 22px;
+  outline: none;
+  font-family: system-ui, sans-serif;
+  flex: 1;
+  min-width: 0;
+}
+
+.edit-block-anchor-preview {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+  font-family: system-ui, sans-serif;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.7;
+}
+
+@keyframes edit-block-flash {
+  0%, 100% { box-shadow: none; }
+  30% { box-shadow: 0 0 0 3px #d97706; }
+}
+.edit-block-flash {
+  animation: edit-block-flash 1.2s ease;
+}
+
+/* ─── Mini player audio ─── */
+.audio-player {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, #7c3aed 22%, transparent);
+  background: color-mix(in srgb, #7c3aed 6%, var(--color-bg-primary));
+  font-family: system-ui, sans-serif;
+}
+
+.audio-play-btn,
+.audio-mute-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.audio-play-btn {
+  background: #7c3aed;
+  color: #fff;
+}
+.audio-play-btn:hover {
+  background: #6d28d9;
+}
+
+.audio-mute-btn {
+  background: transparent;
+  color: color-mix(in srgb, #7c3aed 70%, var(--color-text-muted));
+}
+.audio-mute-btn:hover {
+  background: color-mix(in srgb, #7c3aed 12%, transparent);
+}
+
+.audio-volume {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.audio-volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 64px;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, #7c3aed 18%, transparent);
+  outline: none;
+  cursor: pointer;
+}
+.audio-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #7c3aed;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.audio-volume-slider::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #7c3aed;
+  border: none;
+  cursor: pointer;
+}
+.audio-volume-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+/* Fill the track up to the thumb */
+.audio-volume-slider {
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, #7c3aed 60%, transparent) 0%,
+    color-mix(in srgb, #7c3aed 60%, transparent) calc(var(--val, 100) * 1%),
+    color-mix(in srgb, #7c3aed 18%, transparent) calc(var(--val, 100) * 1%),
+    color-mix(in srgb, #7c3aed 18%, transparent) 100%
+  );
+}
+
+/* Masque les flèches natives (stepper) des champs nombre — l'app utilise des
+   inputs stylés maison, le spinner natif est hors charte (budget, sommeil…). */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.audio-center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.audio-filename {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audio-bar {
+  position: relative;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+.audio-bar-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, #7c3aed 18%, transparent);
+  overflow: hidden;
+}
+.audio-bar-fill {
+  height: 100%;
+  background: #7c3aed;
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+.audio-bar-thumb {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #7c3aed;
+  transform: translateX(-50%);
+  top: 50%;
+  margin-top: -6px;
+  pointer-events: none;
+}
+
+.audio-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+}
+
+/* Wrapper dans l'éditeur */
+.audio-node-wrapper {
+  position: relative;
+  margin: 0.75rem 0;
+}
+.audio-node-drag {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.audio-node-wrapper:hover .audio-node-drag,
+.audio-node-selected .audio-node-drag {
+  opacity: 0.55;
+}
+.audio-node-drag:hover { opacity: 1; }
+.audio-node-wrapper:hover .audio-node-delete,
+.audio-node-selected .audio-node-delete {
+  opacity: 1;
+}
+.audio-node-selected .audio-player {
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
+}
+.audio-node-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  background: var(--color-bg-elevated);
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.audio-node-delete:hover {
+  background: color-mix(in srgb, var(--color-error, #e05555) 12%, transparent);
+  color: var(--color-error, #e05555);
+}
+.audio-node-spoiler .audio-player {
+  opacity: 0.4;
+  filter: blur(3px);
+  pointer-events: none;
+}
+/* Barre d'actions sous le player — toujours visible, compatible mobile */
+.audio-node-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  justify-content: flex-end;
+}
+.audio-node-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.68rem;
+  font-family: system-ui, sans-serif;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--color-text-muted) 25%, transparent);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+@media (hover: hover) {
+  .audio-node-action-btn:hover {
+    background: color-mix(in srgb, var(--color-text-muted) 8%, transparent);
+    color: var(--color-text-primary);
+  }
+  .audio-node-action-danger:hover {
+    background: color-mix(in srgb, var(--color-error, #e05555) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-error, #e05555) 40%, transparent);
+    color: var(--color-error, #e05555);
+  }
+}
+.audio-node-action-active {
+  color: var(--color-accent, #7c3aed);
+  border-color: color-mix(in srgb, var(--color-accent, #7c3aed) 40%, transparent);
+  background: color-mix(in srgb, var(--color-accent, #7c3aed) 8%, transparent);
+}
+
+/* ── Video node ─────────────────────────────────────────────────────── */
+.video-node-wrapper {
+  position: relative;
+  margin: 0.75rem 0;
+}
+.video-node-player {
+  width: 100%;
+  max-height: 480px;
+  border-radius: 8px;
+  background: #000;
+  display: block;
+}
+.video-node-drag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.video-node-wrapper:hover .video-node-drag,
+.video-node-selected .video-node-drag {
+  opacity: 0.55;
+}
+.video-node-drag:hover { opacity: 1; }
+.video-node-wrapper:hover .video-node-delete,
+.video-node-selected .video-node-delete {
+  opacity: 1;
+}
+.video-node-selected .video-node-player {
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
+}
+.video-node-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-bg-elevated) 85%, transparent);
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.video-node-delete:hover {
+  background: color-mix(in srgb, var(--color-error, #e05555) 12%, transparent);
+  color: var(--color-error, #e05555);
+}
+.video-node-spoiler .video-node-player {
+  opacity: 0.25;
+  filter: blur(12px);
+  pointer-events: none;
+}
+
+/* ── Resizable image ────────────────────────────────────────────────── */
+.resizable-image-wrapper {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  margin: 0.5rem 0;
+  line-height: 0;
+}
+.resizable-image-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+.resizable-image-selected .resizable-image-img {
+  outline: 2px solid var(--color-accent, #7c3aed);
+  outline-offset: 2px;
+}
+.resizable-image-spoiler .resizable-image-img {
+  filter: blur(20px);
+  pointer-events: none;
+}
+.resizable-image-spoiler-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.resizable-image-handle {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 16px;
+  height: 16px;
+  cursor: se-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  background: var(--color-accent, #7c3aed);
+  border-radius: 3px;
+  border: 2px solid #fff;
+}
+.resizable-image-wrapper:hover .resizable-image-handle,
+.resizable-image-selected .resizable-image-handle {
+  opacity: 1;
+}
+
+/* ── Grille souvenirs ───────────────────────────────────────────────── */
+.souvenir-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+@media (min-width: 640px) {
+  .souvenir-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+}
+.souvenir-tile {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--color-bg-elevated);
+  cursor: pointer;
+  aspect-ratio: 4 / 3;
+}
+.souvenir-tile-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: filter 0.3s;
+}
+.souvenir-blurred {
+  filter: blur(18px);
+}
+.souvenir-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.souvenir-overlay-clickable { cursor: pointer; }
+.souvenir-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  font-size: 0.72rem;
+  font-family: system-ui, sans-serif;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  text-align: center;
+  max-width: 90%;
+}
+.souvenir-caption {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1.5rem 0.5rem 0.4rem;
+  background: linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 100%);
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.souvenir-caption-title {
+  font-size: 0.65rem;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.souvenir-open-note {
+  font-size: 0.6rem;
+  white-space: nowrap;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .souvenir-tile:hover .souvenir-caption { opacity: 1; }
+  .souvenir-open-note:hover { background: rgba(255,255,255,0.32); }
+}
+/* Sur mobile/tactile : caption toujours visible, pas de hover */
+@media (hover: none), (pointer: coarse) {
+  .souvenir-caption { opacity: 1; }
+}
+
+/* Tags sur les tuiles */
+.souvenir-tags-bar {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  max-width: calc(100% - 12px);
+}
+.souvenir-tag-display {
+  background: rgba(0,0,0,0.52);
+  color: #fff;
+  font-size: 0.6rem;
+  font-family: system-ui, sans-serif;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  white-space: nowrap;
+}
+.souvenir-tag-edit-btn {
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: #fff;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Éditeur de tags inline */
+.souvenir-tag-editor {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.82);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+}
+.souvenir-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  align-content: flex-start;
+}
+.souvenir-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--color-accent, #7c3aed);
+  color: #fff;
+  font-size: 0.62rem;
+  font-family: system-ui, sans-serif;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+}
+.souvenir-tag-remove {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.8);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0 1px;
+}
+.souvenir-tag-input {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  font-size: 0.68rem;
+  font-family: system-ui, sans-serif;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+  outline: none;
+  width: 60px;
+  min-width: 0;
+}
+.souvenir-tag-input::placeholder { color: rgba(255,255,255,0.5); }
+.souvenir-tag-done {
+  background: var(--color-accent, #7c3aed);
+  color: #fff;
+  font-size: 0.65rem;
+  font-family: system-ui, sans-serif;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  align-self: flex-end;
+}
+
+
+/* Barre de progression upload vidéo */
+.video-upload-progress-bar {
+  height: 2px;
+  background: var(--color-accent, #7c3aed);
+  border-radius: 1px;
+  transition: width 0.2s ease;
+  margin-top: 2px;
+}
+
+/* Respect du choix utilisateur de réduire le mouvement */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-8px); }
+  40%       { transform: translateX(8px); }
+  60%       { transform: translateX(-6px); }
+  80%       { transform: translateX(4px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* Drawer Souvenirs : glissement depuis le bord droit */
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.22s ease-out;
+}
+
+/* Toasts (snackbars) — entrée par le bas (cf. lib/toast.tsx) */
+@keyframes toastEnter {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.toast-enter {
+  animation: toastEnter 0.2s var(--ease-cozy, ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-enter { animation: none; }
+}
+
+/* Liens markdown en mode lecture (AnnotatedReader) */
+.diary-link {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 0.15s;
+}
+.diary-link:hover { text-decoration-color: var(--color-accent); }
+
+/* Code inline `…` en mode lecture (AnnotatedReader) */
+.diary-inline-code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  font-size: 0.88em;
+  background: color-mix(in srgb, var(--color-text-muted) 14%, transparent);
+  color: var(--color-accent);
+  padding: 0.08em 0.34em;
+  border-radius: 5px;
+  white-space: break-spaces;
+  word-break: break-word;
+}
+
+/* ─── Syntax highlighting (lowlight / highlight.js tokens) ─── */
+.tiptap pre,
+.diary-code-block {
+  background: color-mix(in srgb, var(--color-bg-primary) 60%, #1e1e2e);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  font-size: 0.82em;
+  line-height: 1.7;
+  margin: 0.75rem 0;
+}
+
+.tiptap pre code,
+.diary-code-block code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  color: #cdd6f4;
+}
+
+/* lang badge */
+.tiptap pre[data-language]::before,
+.diary-code-block[data-language]::before {
+  content: attr(data-language);
+  display: block;
+  font-size: 0.7em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+  margin-bottom: 0.5rem;
+  font-family: system-ui, sans-serif;
+}
+
+/* highlight.js token colors (Catppuccin Mocha palette) */
+.hljs-comment, .hljs-quote         { color: #6c7086; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag,
+.hljs-built_in, .hljs-name,
+.hljs-tag                          { color: #cba6f7; }
+.hljs-string, .hljs-attr,
+.hljs-symbol, .hljs-bullet,
+.hljs-addition                     { color: #a6e3a1; }
+.hljs-title, .hljs-section,
+.hljs-attribute, .hljs-variable,
+.hljs-template-variable            { color: #89b4fa; }
+.hljs-number, .hljs-literal        { color: #fab387; }
+.hljs-type, .hljs-params,
+.hljs-meta, .hljs-link             { color: #f38ba8; }
+.hljs-formula                      { background: #1e1e2e; color: #cdd6f4; }
+.hljs-deletion                     { color: #f38ba8; }
+.hljs-selector-id,
+.hljs-selector-class               { color: #89dceb; }
+.hljs-emphasis                     { font-style: italic; }
+.hljs-strong                       { font-weight: bold; }
+
+
+/* === Help center prose === */
+.help-prose { color: var(--color-text-primary); font-size: 15px; line-height: 1.65; }
+.help-prose > * + * { margin-top: 1rem; }
+.help-prose h1 { font-family: 'Lora', Georgia, serif; font-size: 1.75rem; font-weight: 600; margin-top: 2.5rem; margin-bottom: 0.5rem; line-height: 1.2; }
+.help-prose h2 { font-family: 'Lora', Georgia, serif; font-size: 1.35rem; font-weight: 600; margin-top: 2.25rem; margin-bottom: 0.5rem; line-height: 1.25; }
+.help-prose h3 { font-size: 1.05rem; font-weight: 600; margin-top: 1.75rem; margin-bottom: 0.4rem; color: var(--color-text-primary); }
+.help-prose h4 { font-size: 0.95rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.3rem; }
+.help-prose p { margin: 0; }
+.help-prose ul, .help-prose ol { padding-left: 1.4rem; margin: 0; }
+.help-prose ul { list-style: disc; }
+.help-prose ol { list-style: decimal; }
+.help-prose li { margin: 0.25rem 0; }
+.help-prose li > p { margin: 0; }
+.help-prose strong { font-weight: 600; color: var(--color-text-primary); }
+.help-prose em { font-style: italic; }
+.help-prose a { color: var(--color-accent); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--color-accent) 35%, transparent); text-underline-offset: 2px; transition: text-decoration-color 0.15s; }
+.help-prose a:hover { text-decoration-color: var(--color-accent); }
+.help-prose code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; background: color-mix(in srgb, var(--color-text-muted) 12%, transparent); padding: 0.1em 0.35em; border-radius: 4px; }
+.help-prose pre { background: color-mix(in srgb, var(--color-text-muted) 8%, transparent); padding: 0.85rem 1rem; border-radius: 10px; overflow-x: auto; font-size: 0.85em; }
+.help-prose pre code { background: none; padding: 0; }
+.help-prose blockquote { border-left: 3px solid color-mix(in srgb, var(--color-accent) 50%, transparent); padding: 0.25rem 0 0.25rem 1rem; color: var(--color-text-muted); font-style: italic; }
+.help-prose blockquote > p { margin: 0; }
+.help-prose hr { border: 0; border-top: 1px solid color-mix(in srgb, var(--color-text-muted) 18%, transparent); margin: 2rem 0; }
+.help-prose table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+.help-prose th, .help-prose td { border-bottom: 1px solid color-mix(in srgb, var(--color-text-muted) 12%, transparent); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; }
+.help-prose th { font-weight: 600; color: var(--color-text-primary); background: color-mix(in srgb, var(--color-text-muted) 5%, transparent); }
+.help-prose td { color: var(--color-text-primary); }
+
+/* ─── Diagrammes Mermaid ─── */
+.mermaid-block {
+  margin: 0.75rem 0;
+  border: 1px solid color-mix(in srgb, var(--color-text-muted) 15%, transparent);
+  border-radius: 14px;
+  background: var(--color-bg-elevated);
+  overflow: hidden;
+}
+.mermaid-block--read { background: transparent; }
+.mermaid-block-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-text-muted) 10%, transparent);
+}
+.mermaid-block-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--color-text-muted) 70%, transparent);
+}
+.mermaid-block-actions { display: flex; align-items: center; gap: 0.25rem; }
+.mermaid-block-btn {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--color-text-muted) 70%, transparent);
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.mermaid-block-btn:hover { color: var(--color-text-primary); background: color-mix(in srgb, var(--color-text-muted) 10%, transparent); }
+/* Toggle de repli (chevron + libellé) */
+.mermaid-block-toggle {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: none; cursor: pointer; color: color-mix(in srgb, var(--color-text-muted) 70%, transparent);
+}
+.mermaid-block-toggle:hover .mermaid-block-label { color: var(--color-text-primary); }
+/* Barre cliquable plein-largeur (lecture) */
+button.mermaid-block-bar { width: 100%; cursor: pointer; background: none; text-align: left; }
+button.mermaid-block-bar:hover { background: color-mix(in srgb, var(--color-text-muted) 5%, transparent); }
+
+/* Rendu SVG : centré, jamais plus large que le conteneur, scroll si débordement */
+.mermaid-render { padding: 1rem; overflow-x: auto; text-align: center; }
+.mermaid-render svg { max-width: 100%; height: auto; display: inline-block; }
+.mermaid-loading { padding: 1rem; font-size: 12px; font-style: italic; color: color-mix(in srgb, var(--color-text-muted) 60%, transparent); text-align: center; }
+
+.mermaid-error {
+  margin: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--color-error) 35%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-error) 8%, transparent);
+}
+.mermaid-error-title { font-size: 12px; font-weight: 600; color: var(--color-error); margin: 0 0 0.25rem; }
+.mermaid-error-detail { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--color-text-muted); white-space: pre-wrap; word-break: break-word; margin: 0; }
+
+/* Édition */
+.mermaid-edit { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.75rem; }
+.mermaid-textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
+  border: 1px solid color-mix(in srgb, var(--color-text-muted) 15%, transparent);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  outline: none;
+}
+.mermaid-textarea:focus { border-color: color-mix(in srgb, var(--color-accent) 40%, transparent); }
+.mermaid-edit-preview {
+  border: 1px dashed color-mix(in srgb, var(--color-text-muted) 18%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-text-muted) 4%, transparent);
+}
+.mermaid-edit-hint { font-size: 11px; color: color-mix(in srgb, var(--color-text-muted) 65%, transparent); margin: 0; }
+.mermaid-edit-hint a { color: var(--color-accent); text-decoration: underline; }
+.mermaid-edit-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.mermaid-btn-cancel { font-size: 12px; color: color-mix(in srgb, var(--color-text-muted) 70%, transparent); padding: 0.25rem 0.6rem; }
+.mermaid-btn-cancel:hover { color: var(--color-text-primary); }
+.mermaid-btn-delete { font-size: 12px; color: var(--color-error); padding: 0.25rem 0.6rem; border-radius: 8px; }
+.mermaid-btn-delete:hover { background: color-mix(in srgb, var(--color-error) 12%, transparent); }
+.mermaid-btn-save {
+  font-size: 12px; font-weight: 500;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  padding: 0.25rem 0.75rem; border-radius: 8px;
+  transition: background 0.15s;
+}
+.mermaid-btn-save:hover { background: color-mix(in srgb, var(--color-accent) 25%, transparent); }
+
+/* ─── Visionneuse plein écran (zoom / pan) ─── */
+.mermaid-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: color-mix(in srgb, var(--color-bg-primary) 88%, #000);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.mermaid-zoom-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  overscroll-behavior: contain;
+}
+.mermaid-zoom-stage:active { cursor: grabbing; }
+/* Le pan se fait par translate (jamais flou). */
+.mermaid-zoom-pan { will-change: transform; }
+/* Le zoom se fait en changeant la LARGEUR réelle du contenu → re-rendu vectoriel
+   net du SVG (pas de bitmap étiré). */
+.mermaid-zoom-content { max-width: none; }
+.mermaid-zoom-content .mermaid-render { padding: 0; overflow: visible; }
+.mermaid-zoom-content .mermaid-render svg {
+  width: 100% !important;
+  height: auto !important;
+  max-width: none !important;
+  display: block;
+}
+.mermaid-zoom-controls {
+  position: absolute;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 9999px;
+  background: var(--color-bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--color-text-muted) 15%, transparent);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+}
+.mermaid-zoom-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 9999px;
+  font-size: 15px;
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-text-muted) 8%, transparent);
+  transition: background 0.15s;
+}
+.mermaid-zoom-controls button:hover { background: color-mix(in srgb, var(--color-text-muted) 16%, transparent); }
+.mermaid-zoom-reset { width: auto; padding: 0 0.7rem; font-size: 12px !important; }
+.mermaid-zoom-pct {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  min-width: 3.2ch;
+  text-align: center;
+}
+.mermaid-zoom-close {
+  position: absolute;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 9999px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--color-text-muted) 15%, transparent);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+  transition: background 0.15s;
+}
+.mermaid-zoom-close:hover { background: color-mix(in srgb, var(--color-text-muted) 12%, transparent); }
+

@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "NotifType" ADD VALUE 'REACTION_NEW';

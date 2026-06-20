@@ -1,0 +1,2 @@
+-- AddValue
+ALTER TYPE "NotifType" ADD VALUE 'THREAD_REOPENED';

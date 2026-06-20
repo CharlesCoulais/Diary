@@ -1,0 +1,5 @@
+ALTER TABLE "User" ADD COLUMN "notifyOwnerComments" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "User" ADD COLUMN "notifyOwnerReactions" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "User" ADD COLUMN "notifyOwnerTaskChanges" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "User" ADD COLUMN "notifyOwnerRequests" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "User" ADD COLUMN "notifyOwnerSecurity" BOOLEAN NOT NULL DEFAULT true;
