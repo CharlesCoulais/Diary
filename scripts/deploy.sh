@@ -18,10 +18,13 @@ for arg in "$@"; do
   esac
 done
 
-BACKUP_DIR="$HOME/diary-backups"
+# Chemins DÉDIÉS au fork (distincts de l'app d'origine, qui utilise
+# ~/diary-backups et ~/.carnet-backup-passphrase) : sinon les backups se
+# mélangent et le fork réutilise silencieusement la passphrase de l'original.
+BACKUP_DIR="$HOME/diary-confident-backups"
 TIMESTAMP=$(date +"%Y%m%d_%H%M")
 BACKUP_FILE="$BACKUP_DIR/pre_deploy_${TIMESTAMP}.dump.enc"
-PASSPHRASE_FILE="$HOME/.carnet-backup-passphrase"
+PASSPHRASE_FILE="$HOME/.diary-confident-backup-passphrase"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 mkdir -p "$BACKUP_DIR"
