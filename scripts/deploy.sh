@@ -27,6 +27,11 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$BACKUP_DIR"
 cd "$PROJECT_ROOT"
 
+# ── Garde-fou : ne JAMAIS déployer sur la prod de l'app d'origine ─────────────
+# Refuse si ce dossier est lié au projet Railway de l'original (ou n'est lié à
+# rien). Le fork doit être lié à SON propre projet (railway link).
+"$PROJECT_ROOT/scripts/railway-guard.sh"
+
 # ── 0. Vérifier / créer la passphrase de chiffrement ─────────────────────────
 if [ "$SKIP_BACKUP" = false ] && [ ! -f "$PASSPHRASE_FILE" ]; then
   echo "⚠️  Aucune passphrase de backup trouvée."

@@ -16,7 +16,7 @@
     "db:migrate": "pnpm --filter @carnet/api db:migrate",
     "db:generate": "pnpm --filter @carnet/api db:generate",
     "db:studio": "pnpm --filter @carnet/api db:studio",
-    "ship": "pnpm --filter @carnet/api build && railway up --service generous-sparkle"
+    "ship": "./scripts/railway-guard.sh && pnpm --filter @carnet/api build && railway up"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
