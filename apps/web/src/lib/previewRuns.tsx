@@ -28,6 +28,9 @@ export function parsePreviewRuns(md: string): StyledRun[] {
     // dans PreviewRuns). Le texte caché n'est jamais exposé. Remplace l'ancien
     // ▓▓▓ (hachuré peu lisible).
     .replace(/\|\|[^|\n]+?\|\|/g, '<span data-spoiler="1"></span>')
+    // Cases à cocher des listes de tâches : `- [ ] x` / `- [x] x` → on retire le
+    // marqueur `[ ]`/`[x]` pour ne pas l'afficher en brut dans la preview.
+    .replace(/^(\s*[-*+]\s+)\[[ xX]\]\s+/gm, '$1')
     // Directives media non-spoiler
     .replace(/^:::audio[^\n]*$/gm, '')
     .replace(/^:::video[^\n]*$/gm, '')

@@ -39,7 +39,7 @@ function Btn({ active, disabled, onClick, title, children }: ToolbarButtonProps)
       }}
       onPointerLeave={() => { startPos.current = null; }}
       className={
-        'flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[34px] [@media(pointer:coarse)]:h-[34px] rounded text-sm transition-colors duration-100 ' +
+        'flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[40px] [@media(pointer:coarse)]:h-[40px] rounded text-sm transition-colors duration-100 ' +
         (active
           ? 'bg-accent/15 text-accent'
           : 'text-text-muted hover:text-text-primary hover:bg-text-muted/10') +
@@ -227,7 +227,7 @@ function FontPicker({ editor, baseFontSize, dropUp = false }: { editor: Editor; 
       title="Police de caractères"
       onOpen={() => DIARY_FONTS.forEach((f) => loadFont(f.key))}
       buttonClassName={(open) =>
-        'flex items-center gap-0.5 px-1.5 h-7 [@media(pointer:coarse)]:h-[34px] rounded text-xs transition-colors duration-100 ' +
+        'flex items-center gap-0.5 px-1.5 h-7 [@media(pointer:coarse)]:h-[40px] rounded text-xs transition-colors duration-100 ' +
         (open || activeFont ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text-primary hover:bg-text-muted/10')
       }
       buttonStyle={activeFont ? { fontFamily: activeFont.family } : undefined}
@@ -318,7 +318,7 @@ function SizePicker({ fontSize, onChange, editor, dropUp = false }: { fontSize?:
       dropUp={dropUp}
       title="Taille de police"
       buttonClassName={(open) =>
-        'flex items-center px-1.5 h-7 [@media(pointer:coarse)]:h-[34px] rounded text-xs font-medium transition-colors duration-100 ' +
+        'flex items-center px-1.5 h-7 [@media(pointer:coarse)]:h-[40px] rounded text-xs font-medium transition-colors duration-100 ' +
         (open || active ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text-primary hover:bg-text-muted/10')
       }
       buttonContent={active ? active.label : 'M'}
@@ -396,7 +396,7 @@ function ColorPicker({ editor, dropUp = false }: { editor: Editor; dropUp?: bool
       dropUp={dropUp}
       title="Couleur du texte"
       buttonClassName={(open) =>
-        'flex flex-col items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[34px] [@media(pointer:coarse)]:h-[34px] rounded text-sm font-semibold leading-none transition-colors duration-100 ' +
+        'flex flex-col items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[40px] [@media(pointer:coarse)]:h-[40px] rounded text-sm font-semibold leading-none transition-colors duration-100 ' +
         (open || activeColor ? 'bg-accent/15' : 'hover:bg-text-muted/10')
       }
       buttonStyle={{ color: activeColor ?? 'var(--color-text-muted)' }}
@@ -519,9 +519,9 @@ export function EditorToolbar({ editor, fontSize, onFontSizeChange, onImageInser
   };
 
   return (
-    <HScroll className="flex items-center gap-0.5 flex-nowrap py-0.5" fadeFrom="var(--color-bg-elevated)">
+    <HScroll className="flex items-center gap-0.5 [@media(pointer:coarse)]:gap-1.5 flex-nowrap py-0.5" fadeFrom="var(--color-bg-elevated)">
 
-      {/* ── Formatage inline ── */}
+      {/* ── Texte ── */}
       <Btn title="Gras (⌘B)" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
           <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z" /><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z" />
@@ -544,6 +544,11 @@ export function EditorToolbar({ editor, fontSize, onFontSizeChange, onImageInser
           <path d="M8 18C8 18 9.5 20 12 20C14.5 20 17 18.5 17 16C17 14 15.5 13 14 12.5" />
         </svg>
       </Btn>
+      <Btn title="Code en ligne" active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
+        </svg>
+      </Btn>
       <Btn title="Spoiler (⌘⇧S) — texte caché jusqu'au clic en lecture" onClick={() => wrapSpoiler(editor)}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           {/* Œil barré — analogie « contenu masqué » */}
@@ -553,35 +558,27 @@ export function EditorToolbar({ editor, fontSize, onFontSizeChange, onImageInser
           <line x1="1" y1="1" x2="23" y2="23" />
         </svg>
       </Btn>
-
-      <Divider />
-
-      {/* ── Lien + police + taille ── */}
       <Btn title={editor.isActive('link') ? 'Retirer le lien' : 'Ajouter un lien'} active={editor.isActive('link')} onClick={handleLink}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
           <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
         </svg>
       </Btn>
+
+      <Divider />
+
+      {/* ── Style ── */}
       <FontPicker editor={editor} baseFontSize={fontSize} dropUp={dropUp} />
       <SizePicker fontSize={fontSize} onChange={onFontSizeChange} editor={editor} dropUp={dropUp} />
       <ColorPicker editor={editor} dropUp={dropUp} />
 
-      {/* Tous les outils tiennent dans un seul scroll latéral (mobile comme desktop) —
-          plus de repli « ⋯ » : le scroll horizontal était plus lisible que les icônes tassées. */}
-
       <Divider />
 
-      {/* ── Blocs ── */}
+      {/* ── Paragraphe ── */}
       <Btn title="Citation" active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
           <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z" />
           <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z" />
-        </svg>
-      </Btn>
-      <Btn title="Code en ligne" active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
         </svg>
       </Btn>
       <Btn title="Liste à puces" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}>
@@ -600,84 +597,36 @@ export function EditorToolbar({ editor, fontSize, onFontSizeChange, onImageInser
           <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </Btn>
+      <Btn title="Liste de cases à cocher" active={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m3 17 2 2 4-4" /><path d="m3 7 2 2 4-4" /><path d="M13 6h8" /><path d="M13 12h8" /><path d="M13 18h8" />
+        </svg>
+      </Btn>
+
+      <Divider />
+
+      {/* ── Blocs ── */}
       <Btn title="Créer une branche" active={editor.isActive('branch')} onClick={() => editor.chain().focus().insertBranch().run()}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
           <path d="M18 9a9 9 0 0 1-9 9" />
         </svg>
       </Btn>
-      <Btn title="Réduire les lignes vides (1 ligne vide → 0, 2 → 1…) — sur la sélection si du texte est sélectionné" onClick={() => { const hadSelection = !editor.state.selection.empty; const ok = applyReflowToEditor(editor); editor.commands.focus(); if (!ok) void notifyDialog({ title: 'Rien à réduire', message: hadSelection ? 'La sélection ne contient pas de lignes vides en trop.' : 'Cette note ne contient pas de lignes vides en trop.' }); }}>
+      <Btn title="Extrait de livre" active={editor.isActive('excerpt', { kind: 'book' })} onClick={() => editor.chain().focus().insertExcerpt('book').run()}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="14" y2="12" /><line x1="4" y1="18" x2="20" y2="18" />
-          <polyline points="17 10 20 12 17 14" />
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
         </svg>
       </Btn>
-
-      <Divider />
-
-      {/* ── Médias ── */}
-      {onImageInsert && (
-        <label title="Insérer une ou plusieurs images" className="flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[34px] [@media(pointer:coarse)]:h-[34px] rounded text-sm cursor-pointer text-text-muted hover:text-text-primary hover:bg-text-muted/10 transition-colors duration-100">
-          <input type="file" multiple accept="image/jpeg,image/png,image/gif,image/webp" className="sr-only"
-            onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length > 0) onImageInsert(files); e.target.value = ''; }} />
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-          </svg>
-        </label>
-      )}
-      {onAudioInsert && (
-        <label title="Insérer un ou plusieurs fichiers audio" className="flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[34px] [@media(pointer:coarse)]:h-[34px] rounded text-sm cursor-pointer text-text-muted hover:text-text-primary hover:bg-text-muted/10 transition-colors duration-100">
-          <input
-            type="file"
-            multiple
-            accept="audio/mpeg,audio/mp3,audio/ogg,audio/wav,audio/aac,audio/flac,audio/mp4"
-            className="sr-only"
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? []);
-              if (files.length > 0) onAudioInsert(files);
-              e.target.value = '';
-            }}
-          />
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-          </svg>
-        </label>
-      )}
-      {onVideoInsert && (
-        <label title="Insérer une vidéo (MP4, WebM ou MOV — jusqu'à 500 Mo)" className="flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[34px] [@media(pointer:coarse)]:h-[34px] rounded text-sm cursor-pointer text-text-muted hover:text-text-primary hover:bg-text-muted/10 transition-colors duration-100">
-          <input
-            type="file"
-            accept="video/mp4,video/webm,video/quicktime"
-            className="sr-only"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onVideoInsert(file);
-              e.target.value = '';
-            }}
-          />
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-          </svg>
-        </label>
-      )}
-      <SpellCheckButton
-        getText={() => {
-          // Périmètre : sélection si non vide, sinon toute la note.
-          const range = getWorkRange(editor);
-          const md = getMarkdownForRange(editor, range.from, range.to);
-          const { masked, regions } = maskCustomBlocks(md);
-          spellState.current = { regions, range };
-          return masked;
-        }}
-        onApply={(corrected) => {
-          const restored = restoreCustomBlocks(corrected, spellState.current.regions);
-          const { from, to } = spellState.current.range;
-          replaceRangeWithMarkdown(editor, from, to, restored);
-        }}
-      />
-      <Divider />
-
-      {/* ── Blocs spéciaux ── */}
+      <Btn title="Extrait de paroles" active={editor.isActive('excerpt', { kind: 'lyrics' })} onClick={() => editor.chain().focus().insertExcerpt('lyrics').run()}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="22" />
+        </svg>
+      </Btn>
+      <Btn title="Citation film / série" active={editor.isActive('excerpt', { kind: 'movie' })} onClick={() => editor.chain().focus().insertExcerpt('movie').run()}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="2" width="20" height="20" rx="2.18" /><line x1="7" y1="2" x2="7" y2="22" /><line x1="17" y1="2" x2="17" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /><line x1="2" y1="7" x2="7" y2="7" /><line x1="2" y1="17" x2="7" y2="17" /><line x1="17" y1="17" x2="22" y2="17" /><line x1="17" y1="7" x2="22" y2="7" />
+        </svg>
+      </Btn>
       <Btn title="Ajout tardif horodaté" onClick={() => editor.chain().focus().insertEditBlock().run()}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
@@ -695,10 +644,83 @@ export function EditorToolbar({ editor, fontSize, onFontSizeChange, onImageInser
           <path d="M7.5 8v3a2 2 0 0 0 2 2h7a2 2 0 0 1 0 0" /><path d="M7.5 8v3a2 2 0 0 0 2 2h7" /><path d="M16.5 13v3" />
         </svg>
       </Btn>
-      <ImportMarkdownBtn editor={editor} />
-      <CollapseAllBtn editor={editor} />
       <TableInsertBtn editor={editor} dropUp={dropUp} />
       <TableContextToolbar editor={editor} />
+
+      <Divider />
+
+      {/* ── Médias ── */}
+      {onImageInsert && (
+        <label title="Insérer une ou plusieurs images" className="flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[40px] [@media(pointer:coarse)]:h-[40px] rounded text-sm cursor-pointer text-text-muted hover:text-text-primary hover:bg-text-muted/10 transition-colors duration-100">
+          <input type="file" multiple accept="image/jpeg,image/png,image/gif,image/webp" className="sr-only"
+            onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length > 0) onImageInsert(files); e.target.value = ''; }} />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
+          </svg>
+        </label>
+      )}
+      {onAudioInsert && (
+        <label title="Insérer un ou plusieurs fichiers audio" className="flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[40px] [@media(pointer:coarse)]:h-[40px] rounded text-sm cursor-pointer text-text-muted hover:text-text-primary hover:bg-text-muted/10 transition-colors duration-100">
+          <input
+            type="file"
+            multiple
+            accept="audio/mpeg,audio/mp3,audio/ogg,audio/wav,audio/aac,audio/flac,audio/mp4"
+            className="sr-only"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              if (files.length > 0) onAudioInsert(files);
+              e.target.value = '';
+            }}
+          />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+          </svg>
+        </label>
+      )}
+      {onVideoInsert && (
+        <label title="Insérer une vidéo (MP4, WebM ou MOV — jusqu'à 500 Mo)" className="flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[40px] [@media(pointer:coarse)]:h-[40px] rounded text-sm cursor-pointer text-text-muted hover:text-text-primary hover:bg-text-muted/10 transition-colors duration-100">
+          <input
+            type="file"
+            accept="video/mp4,video/webm,video/quicktime"
+            className="sr-only"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onVideoInsert(file);
+              e.target.value = '';
+            }}
+          />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+          </svg>
+        </label>
+      )}
+
+      <Divider />
+
+      {/* ── Outils ── */}
+      <SpellCheckButton
+        getText={() => {
+          // Périmètre : sélection si non vide, sinon toute la note.
+          const range = getWorkRange(editor);
+          const md = getMarkdownForRange(editor, range.from, range.to);
+          const { masked, regions } = maskCustomBlocks(md);
+          spellState.current = { regions, range };
+          return masked;
+        }}
+        onApply={(corrected) => {
+          const restored = restoreCustomBlocks(corrected, spellState.current.regions);
+          const { from, to } = spellState.current.range;
+          replaceRangeWithMarkdown(editor, from, to, restored);
+        }}
+      />
+      <Btn title="Réduire les lignes vides (1 ligne vide → 0, 2 → 1…) — sur la sélection si du texte est sélectionné" onClick={() => { const hadSelection = !editor.state.selection.empty; const ok = applyReflowToEditor(editor); editor.commands.focus(); if (!ok) void notifyDialog({ title: 'Rien à réduire', message: hadSelection ? 'La sélection ne contient pas de lignes vides en trop.' : 'Cette note ne contient pas de lignes vides en trop.' }); }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="14" y2="12" /><line x1="4" y1="18" x2="20" y2="18" />
+          <polyline points="17 10 20 12 17 14" />
+        </svg>
+      </Btn>
+      <ImportMarkdownBtn editor={editor} />
+      <CollapseAllBtn editor={editor} />
 
       {/* ── Position toggle (pushed right) ── */}
       {onTogglePosition && (
@@ -744,7 +766,7 @@ function TableInsertBtn({ editor, dropUp = false }: { editor: Editor; dropUp?: b
       title="Insérer un tableau"
       onClose={() => setHovered(null)}
       buttonClassName={(open) =>
-        'flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[34px] [@media(pointer:coarse)]:h-[34px] rounded text-sm transition-colors duration-100 ' +
+        'flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[40px] [@media(pointer:coarse)]:h-[40px] rounded text-sm transition-colors duration-100 ' +
         (open ? 'bg-accent/15 text-accent' : 'text-text-muted hover:text-text-primary hover:bg-text-muted/10')
       }
       buttonContent={(
@@ -917,7 +939,7 @@ function ImportMarkdownBtn({ editor }: { editor: Editor }) {
   return (
     <label
       title="Importer un fichier Markdown (.md) au curseur"
-      className={`flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[34px] [@media(pointer:coarse)]:h-[34px] rounded text-sm cursor-pointer text-text-muted hover:text-text-primary hover:bg-text-muted/10 transition-colors duration-100 ${busy ? 'opacity-50 pointer-events-none' : ''}`}
+      className={`flex items-center justify-center w-7 h-7 [@media(pointer:coarse)]:w-[40px] [@media(pointer:coarse)]:h-[40px] rounded text-sm cursor-pointer text-text-muted hover:text-text-primary hover:bg-text-muted/10 transition-colors duration-100 ${busy ? 'opacity-50 pointer-events-none' : ''}`}
     >
       <input
         type="file"

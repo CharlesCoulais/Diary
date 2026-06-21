@@ -147,6 +147,39 @@ function RatingButtonsForCard({ entry }: { entry: LocalEntry }) {
   );
 }
 
+/**
+ * Indicateur d'enregistrement compact (icône seule, largeur fixe → ne décale
+ * jamais la barre d'actions, contrairement à l'ancien badge texte dans la barre
+ * de formatage). idle = vide mais réserve la place.
+ */
+function SaveDot({ status }: { status: SaveStatus }) {
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      title={status === 'error' ? "Échec de l'enregistrement — réessaie" : status === 'saving' ? 'Enregistrement…' : status === 'saved' ? 'Enregistré' : undefined}
+      className="shrink-0 w-6 h-7 inline-flex items-center justify-center"
+    >
+      {status === 'saving' && (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="animate-spin text-text-muted/70">
+          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+        </svg>
+      )}
+      {status === 'saved' && (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-success">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      )}
+      {status === 'error' && (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-danger">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
 function EntryCardView({
   entry,
   onOpen,
@@ -2120,6 +2153,9 @@ export function EntryCard({ entry, autoFocus = false, defaultOpen = false, focus
           </div>
         )}
         <div className="flex-1" />
+        {/* Indicateur d'enregistrement — emplacement stable (ne fait plus sauter
+            la barre de formatage). Largeur fixe → pas de décalage. */}
+        <SaveDot status={saveStatus} />
         {/* Desktop : supprimer (tout à droite) */}
         {desktopPanel && (
           <button
@@ -2737,7 +2773,6 @@ export function EntryCard({ entry, autoFocus = false, defaultOpen = false, focus
                       ref={editorRef}
                       initialContent={entry.contentMd}
                       onChange={handleChange}
-                      saveStatus={saveStatus}
                       autoFocus={isEditing && isJournal}
                       fontFamily={getFontFamily(entry.font)}
                       fontSize={entry.fontSize ?? undefined}

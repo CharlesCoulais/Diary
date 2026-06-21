@@ -2,6 +2,24 @@
 
 Les évolutions récentes de l'application, du plus récent au plus ancien.
 
+## v0.15.0 — 21 juin 2026
+
+### 📖 Extraits & citations
+
+- Trois nouveaux blocs d'éditeur pour **citer un passage**, chacun avec son icône dans la barre d'outils : **livre** 📖, **paroles de chanson** 🎵 et **film / série** 🎬. L'extrait s'affiche dans un **encadré repliable** façon citation, avec ses **informations** (toutes optionnelles) :
+  - **Livre** : titre, auteur, chapitre, page
+  - **Paroles** : titre, artiste, album
+  - **Film / série** : titre, personnage, saison, épisode
+- Ouvert par défaut, repliable d'un clic sur l'en-tête, avec une couleur propre à chaque type. Visible chez toi comme chez ton **confident**.
+
+### ✅ Cases à cocher
+
+- Une **liste de cases à cocher** dans l'éditeur (bouton ✅ dans la barre d'outils, juste après les listes). Pratique pour une petite to-do au fil d'une note. Tu coches/décoches en éditant ; en lecture, les cases cochées apparaissent barrées.
+
+### 🧰 Barre d'outils réorganisée
+
+- Les outils de l'éditeur sont **regroupés plus logiquement** (Texte · Style · Paragraphe · Blocs · Médias · Outils) et **plus espacés sur mobile** (plus facile au doigt). L'indicateur d'enregistrement est aussi plus discret.
+
 ## v0.14.0 — 20 juin 2026
 
 ### 🧩 Des champs sur mesure pour tes types de notes

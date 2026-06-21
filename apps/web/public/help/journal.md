@@ -87,6 +87,8 @@ Bouton **« ← Retour au journal »** pour revenir.
 - Le **mode sélection** est le moyen le plus rapide de partager plusieurs notes d'un coup.
 - Les **filtres** se souviennent de leur état entre les sessions (un seul espace de stockage local).
 - Pour insérer une **vidéo** dans une note, clique sur l'icône caméra dans la barre d'outils de l'éditeur. MP4, WebM et MOV sont acceptés, jusqu'à 500 Mo. Une barre de chargement s'affiche pendant l'envoi. La vidéo s'intègre directement dans la note avec un lecteur (lecture, pause, avance rapide).
+- Pour **citer un passage**, trois blocs sont dispo dans la barre d'outils : **extrait de livre** 📖 (titre, auteur, chapitre, page), **extrait de paroles** 🎤 (titre, artiste, album) et **citation film/série** 🎬 (titre, personnage, saison, épisode). L'encadré est repliable façon citation, **tous les champs sont optionnels**, et chaque type a sa couleur. Pratique pour garder une belle phrase avec sa référence — visible aussi par ton confident.
+- Pour une petite **to-do**, ajoute une **liste de cases à cocher** (bouton ✅ dans la barre d'outils, après les listes à puces/numérotées). Tu coches/décoches en éditant ; en lecture les cases cochées sont barrées.
 - Le bouton **Corriger** (orthographe et grammaire) suit la règle de sélection : si tu as sélectionné un passage, il ne corrige que celui-ci ; sinon toute la note.
 <!-- /role -->
 

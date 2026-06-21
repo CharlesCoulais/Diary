@@ -138,7 +138,7 @@ export const EditBlock = Node.create({
                   const lPos = state.bMarks[nextLine] + state.tShift[nextLine];
                   const lMax = state.eMarks[nextLine];
                   const t = state.src.slice(lPos, lMax).trim();
-                  if (/^:::(?:branch|edit|chat|mermaid)\b/.test(t)) {
+                  if (/^:::(?:branch|edit|chat|mermaid|book|lyrics|movie)\b/.test(t)) {
                     depth++;
                   } else if (t === ':::') {
                     depth--;

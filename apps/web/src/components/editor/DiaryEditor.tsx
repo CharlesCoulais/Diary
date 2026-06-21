@@ -12,6 +12,9 @@ import { EditorToolbar } from './EditorToolbar';
 import { Branch } from './extensions/Branch';
 import { BranchAnchor } from './extensions/BranchAnchor';
 import { EditBlock } from './extensions/EditBlock';
+import { Excerpt } from './extensions/Excerpt';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
 import { Chat } from './extensions/Chat';
 import { Mermaid } from './extensions/Mermaid';
 import { HeadingFold } from './extensions/HeadingFold';
@@ -149,7 +152,6 @@ export interface DiaryEditorHandle {
 interface DiaryEditorProps {
   initialContent: string;
   onChange?: (md: string) => void;
-  saveStatus?: SaveStatus;
   placeholder?: string;
   readOnly?: boolean;
   autoFocus?: boolean;
@@ -161,61 +163,9 @@ interface DiaryEditorProps {
   entryId?: string;
 }
 
-const STATUS_LABEL: Record<SaveStatus, string | null> = {
-  idle: null,
-  saving: 'Enregistrement…',
-  saved: 'Enregistré',
-  error: "Échec de l'enregistrement",
-};
-
-const STATUS_CLASS: Record<SaveStatus, string> = {
-  idle: '',
-  saving: 'text-text-muted',
-  saved: 'text-success',
-  error: 'text-danger',
-};
-
-/**
- * Indicateur d'enregistrement, rendu dans la barre d'outils pendant l'édition
- * (toujours visible, là où l'autrice regarde). `aria-live="polite"` pour les
- * lecteurs d'écran. L'état d'erreur est rendu **non ratable** (pastille danger
- * + icône) : sur un journal, savoir que ses mots sont sauvés est un contrat de
- * confiance — un simple glyphe gris ne suffit pas.
- */
-function SaveStatusBadge({ status }: { status: SaveStatus }) {
-  if (status === 'idle') return null;
-  const isError = status === 'error';
-  return (
-    <span
-      role="status"
-      aria-live="polite"
-      className={`shrink-0 inline-flex items-center gap-1 text-[11px] font-medium whitespace-nowrap transition-opacity duration-200 ${STATUS_CLASS[status]} ${isError ? 'px-1.5 py-0.5 rounded-md bg-danger/12' : ''}`}
-    >
-      {status === 'saving' && (
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="animate-spin">
-          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-        </svg>
-      )}
-      {status === 'saved' && (
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      )}
-      {isError && (
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-          <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
-      )}
-      {STATUS_LABEL[status]}
-    </span>
-  );
-}
-
 export const DiaryEditor = forwardRef<DiaryEditorHandle, DiaryEditorProps>(function DiaryEditor({
   initialContent,
   onChange,
-  saveStatus = 'idle',
   placeholder = 'Écris ta journée…',
   readOnly = false,
   autoFocus = false,
@@ -258,6 +208,9 @@ export const DiaryEditor = forwardRef<DiaryEditorHandle, DiaryEditorProps>(funct
       PreservingParagraph,
       CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
       Branch,
+      Excerpt,
+      TaskList,
+      TaskItem.configure({ nested: true }),
       BranchAnchor,
       EditBlock,
       Chat,
@@ -552,7 +505,6 @@ export const DiaryEditor = forwardRef<DiaryEditorHandle, DiaryEditorProps>(funct
                 onTogglePosition={toggleToolbarPosition}
               />
             </div>
-            <SaveStatusBadge status={saveStatus} />
           </div>
           {videoUploadProgress !== null && (
             <div className="video-upload-progress-bar" style={{ width: `${videoUploadProgress}%` }} />
@@ -578,7 +530,6 @@ export const DiaryEditor = forwardRef<DiaryEditorHandle, DiaryEditorProps>(funct
                 onTogglePosition={toggleToolbarPosition}
               />
             </div>
-            <SaveStatusBadge status={saveStatus} />
           </div>
         </div>
       )}

@@ -607,6 +607,130 @@ html, body { overflow-x: clip; }
   padding: 0.6rem 0.75rem;
 }
 
+/* ── Extrait / citation (:::book / :::lyrics / :::movie) ───────────────────────
+   Bloc repliable façon citation avec métadonnées. La couleur est injectée par
+   variante via la variable --excerpt-color (posée en inline sur .excerpt-panel). */
+.excerpt-panel {
+  position: relative;
+  margin: 0.75rem 0;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--excerpt-color) 28%, transparent);
+  background: color-mix(in srgb, var(--excerpt-color) 5%, var(--color-bg-primary));
+  overflow: hidden;
+}
+.excerpt-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  user-select: none;
+  background: color-mix(in srgb, var(--excerpt-color) 8%, transparent);
+  border-bottom: 1px solid transparent;
+}
+.excerpt-panel.is-open > .excerpt-header {
+  border-bottom-color: color-mix(in srgb, var(--excerpt-color) 20%, transparent);
+}
+.excerpt-toggle { color: var(--excerpt-color); opacity: 0.75; flex-shrink: 0; display: inline-flex; }
+.excerpt-icon { color: var(--excerpt-color); opacity: 0.85; flex-shrink: 0; display: inline-flex; }
+.excerpt-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.excerpt-summary-title { font-weight: 600; color: var(--color-text-primary); }
+.excerpt-summary-byline { color: var(--color-text-muted); }
+.excerpt-summary-ref { color: var(--color-text-muted); opacity: 0.8; font-size: 0.76rem; }
+.excerpt-summary-empty { color: var(--color-text-muted); font-style: italic; }
+.excerpt-edit-btn, .excerpt-delete-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.excerpt-edit-btn:hover { opacity: 1; color: var(--excerpt-color); background: color-mix(in srgb, var(--excerpt-color) 12%, transparent); }
+.excerpt-delete-btn:hover { opacity: 1; color: #dc2626; background: color-mix(in srgb, #dc2626 10%, transparent); }
+
+.excerpt-body { display: none; }
+.excerpt-panel.is-open > .excerpt-body { display: block; padding: 0.5rem 0.75rem 0.7rem; }
+
+.excerpt-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem 0.6rem;
+  margin-bottom: 0.6rem;
+}
+.excerpt-meta-field { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.excerpt-meta-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  opacity: 0.75;
+}
+.excerpt-meta-input {
+  font-size: 0.82rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--color-text-muted) 20%, transparent);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  width: 100%;
+  min-width: 0;
+}
+.excerpt-meta-input:focus { outline: none; border-color: color-mix(in srgb, var(--excerpt-color) 50%, transparent); }
+/* iOS Safari zoome sur un input < 16px : on remonte la taille en tactile. */
+@media (pointer: coarse) { .excerpt-meta-input { font-size: 16px; } }
+@media (max-width: 480px) { .excerpt-meta { grid-template-columns: 1fr; } }
+
+.excerpt-quote {
+  margin: 0;
+  padding: 0.1rem 0 0.1rem 0.9rem;
+  border-left: 3px solid color-mix(in srgb, var(--excerpt-color) 45%, transparent);
+  color: var(--color-text-primary);
+}
+
+/* ── Liste de cases à cocher (TaskList Tiptap) — édition ───────────────────── */
+ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.15rem;
+  margin: 0.4rem 0;
+}
+ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+  user-select: none;
+}
+ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+ul[data-type="taskList"] li > div > p { margin: 0; }
+ul[data-type="taskList"] input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+
 /* Mode flottant — le panneau se superpose à la page */
 .branch-backdrop {
   position: fixed;

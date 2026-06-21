@@ -10,6 +10,7 @@ import { TruncatedImage } from './TruncatedImage';
 import { BulkAudioPlayer } from './BulkAudioPlayer';
 import { ImageGallery } from './ImageGallery';
 import { DIARY_FONTS, loadFont, scaledFontSize } from '../lib/fonts';
+import { EXCERPT_KINDS, type ExcerptKind } from './editor/excerptKinds';
 import { AudioPlayer } from './AudioPlayer';
 import { highlightCode } from '../lib/highlightCode';
 import { EntryReactions, CommentReactions } from './EmojiReactionBar';
@@ -91,10 +92,13 @@ export function unescapeMd(text: string): string {
 export interface StyledRun { text: string; fontFamily?: string; fontSize?: string; color?: string; bold?: boolean; italic?: boolean; strike?: boolean; underline?: boolean; spoiler?: boolean; code?: boolean; href?: string; }
 interface StyleEntry { fontFamily?: string; fontSize?: string; color?: string; bold?: boolean; italic?: boolean; strike?: boolean; underline?: boolean; spoiler?: boolean; code?: boolean; href?: string; }
 export interface ContentBlock {
-  type: 'paragraph' | 'blockquote' | 'branch' | 'edit' | 'audio' | 'audioGroup' | 'video' | 'code' | 'image' | 'imageGroup' | 'heading' | 'chat' | 'mermaid' | 'table' | 'list' | 'hr';
+  type: 'paragraph' | 'blockquote' | 'branch' | 'edit' | 'audio' | 'audioGroup' | 'video' | 'code' | 'image' | 'imageGroup' | 'heading' | 'chat' | 'mermaid' | 'table' | 'list' | 'hr' | 'excerpt' | 'taskList';
   runs?: StyledRun[];
   anchorText?: string | null;
   datetime?: string | null;
+  // Bloc « extrait / citation » (:::book / :::lyrics / :::movie)
+  excerptKind?: ExcerptKind;
+  excerptMeta?: Record<string, string>;
   audioSrc?: string;
   audioFilename?: string;
   /** Pour les blocs `audioGroup` (>=2 audios consécutifs regroupés en player playlist). */
@@ -122,6 +126,8 @@ export interface ContentBlock {
   // List block
   ordered?: boolean;
   listItems?: StyledRun[][];
+  // Liste de cases à cocher (- [ ] / - [x])
+  taskItems?: { checked: boolean; runs: StyledRun[] }[];
   // Table block
   tableHeaders?: StyledRun[][];
   tableRows?: StyledRun[][][];
@@ -450,7 +456,7 @@ export function parseContentBlocks(md: string): ContentBlock[] {
         let depth = 1;
         for (; k < end; k++) {
           const t = (lines[k] ?? '').trim();
-          if (/^:::(?:branch|edit|chat|mermaid)\b/.test(t)) depth++;
+          if (/^:::(?:branch|edit|chat|mermaid|book|lyrics|movie)\b/.test(t)) depth++;
           else if (t === ':::') { depth--; if (depth === 0) break; }
         }
         const children = parseRange(i + 1, k);
@@ -458,6 +464,30 @@ export function parseContentBlocks(md: string): ContentBlock[] {
         i = k + 1;
         bufferType = 'paragraph';
         continue;
+      }
+
+      // Extrait / citation : :::book | :::lyrics | :::movie {json des métadonnées}
+      {
+        const ex = line.match(/^:::(book|lyrics|movie)\b/);
+        if (ex) {
+          flush();
+          const kind = ex[1] as ExcerptKind;
+          let meta: Record<string, string> = {};
+          const rest = line.slice(ex[0].length).trim();
+          if (rest) { try { meta = JSON.parse(rest); } catch { /* métadonnées ignorées si invalides */ } }
+          let k = i + 1;
+          let depth = 1;
+          for (; k < end; k++) {
+            const t = (lines[k] ?? '').trim();
+            if (/^:::(?:branch|edit|chat|mermaid|book|lyrics|movie)\b/.test(t)) depth++;
+            else if (t === ':::') { depth--; if (depth === 0) break; }
+          }
+          const children = parseRange(i + 1, k);
+          result.push({ type: 'excerpt', excerptKind: kind, excerptMeta: meta, children });
+          i = k + 1;
+          bufferType = 'paragraph';
+          continue;
+        }
       }
 
       // Spoiler image : ||:::img "src" "alt" [width] [souvenir]||
@@ -597,7 +627,7 @@ export function parseContentBlocks(md: string): ContentBlock[] {
         let depth = 1;
         for (; k < end; k++) {
           const t = (lines[k] ?? '').trim();
-          if (/^:::(?:branch|edit|chat|mermaid)\b/.test(t)) depth++;
+          if (/^:::(?:branch|edit|chat|mermaid|book|lyrics|movie)\b/.test(t)) depth++;
           else if (t === ':::') { depth--; if (depth === 0) break; }
         }
         const children = parseRange(i + 1, k);
@@ -671,6 +701,25 @@ export function parseContentBlocks(md: string): ContentBlock[] {
         flush();
         result.push({ type: 'hr' });
         i++;
+        bufferType = 'paragraph';
+        continue;
+      }
+
+      // Liste de cases à cocher : - [ ] / - [x] (doit passer AVANT la liste à
+      // puces, car `- [ ]` matche aussi le motif d'une puce).
+      const taskItemLine = line.match(/^\s*[-*+]\s+\[([ xX])\]\s+(.*)$/);
+      if (taskItemLine) {
+        flush();
+        const taskItems: { checked: boolean; runs: StyledRun[] }[] = [];
+        let k = i;
+        while (k < end) {
+          const m = (lines[k] ?? '').match(/^\s*[-*+]\s+\[([ xX])\]\s+(.*)$/);
+          if (!m) break;
+          taskItems.push({ checked: (m[1] ?? ' ') !== ' ', runs: parseHtmlRuns(m[2] ?? '') });
+          k++;
+        }
+        result.push({ type: 'taskList', taskItems });
+        i = k;
         bufferType = 'paragraph';
         continue;
       }
@@ -1354,6 +1403,66 @@ function BranchReadBlock({ anchorText, children }: { anchorText: string | null; 
   );
 }
 
+/** Extrait / citation (:::book / :::lyrics / :::movie) en lecture — repliable, ouvert par défaut. */
+function ExcerptReadBlock({ kind, meta, children }: { kind: ExcerptKind; meta: Record<string, string>; children: React.ReactNode }) {
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    const expand = () => setOpen(true);
+    const collapse = () => setOpen(false);
+    window.addEventListener('blocks:expandAll', expand);
+    window.addEventListener('blocks:collapseAll', collapse);
+    return () => {
+      window.removeEventListener('blocks:expandAll', expand);
+      window.removeEventListener('blocks:collapseAll', collapse);
+    };
+  }, []);
+
+  const cfg = EXCERPT_KINDS[kind] ?? EXCERPT_KINDS.book;
+  const hasMeta = cfg.fields.some((f) => meta[f.key]);
+  const { title, byline, refs } = cfg.summarize(meta);
+
+  return (
+    <div
+      className="my-3 rounded-xl overflow-hidden border"
+      style={{
+        ['--excerpt-color' as string]: cfg.colorVar,
+        borderColor: 'color-mix(in srgb, var(--excerpt-color) 30%, transparent)',
+        background: 'color-mix(in srgb, var(--excerpt-color) 5%, var(--color-bg-primary, #fff))',
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left"
+        style={{ background: 'color-mix(in srgb, var(--excerpt-color) 8%, transparent)' }}
+      >
+        <span className="text-[11px] shrink-0" style={{ color: 'color-mix(in srgb, var(--excerpt-color) 60%, currentColor)' }}>{open ? '▼' : '▶'}</span>
+        <span className="shrink-0 inline-flex" style={{ color: 'var(--excerpt-color)', opacity: 0.85 }}>{cfg.icon}</span>
+        <span className="text-sm min-w-0 flex-1" style={{ fontFamily: 'system-ui, sans-serif' }}>
+          {hasMeta ? (
+            <>
+              <span className="font-semibold text-text-primary">{title}</span>
+              {byline && <span className="text-text-muted/80"> — {byline}</span>}
+              {refs.length > 0 && <span className="text-text-muted/60"> · {refs.join(' · ')}</span>}
+            </>
+          ) : (
+            <span className="text-text-muted/70 italic">{cfg.label}</span>
+          )}
+        </span>
+      </button>
+      {open && (
+        <blockquote
+          className="px-4 py-3"
+          style={{ borderLeft: '3px solid color-mix(in srgb, var(--excerpt-color) 45%, transparent)', margin: 0 }}
+        >
+          {children}
+        </blockquote>
+      )}
+    </div>
+  );
+}
+
 /** Sommaire cliquable, généré depuis les titres de la note. Replié/déplié. */
 function TableOfContents({ headings }: { headings: { id: string; level: number; text: string }[] }) {
   const [open, setOpen] = useState(true);
@@ -1711,6 +1820,14 @@ export function AnnotatedReader({
       );
     }
 
+    if (block.type === 'excerpt') {
+      return (
+        <ExcerptReadBlock key={bi} kind={block.excerptKind ?? 'book'} meta={block.excerptMeta ?? {}}>
+          {(block.children ?? []).map((child, ci) => renderBlock(child, ci, false))}
+        </ExcerptReadBlock>
+      );
+    }
+
     if (block.type === 'heading') {
       const level = block.headingLevel ?? 2;
       const sizeClass = level === 1 ? 'text-2xl' : level === 2 ? 'text-xl' : level === 3 ? 'text-lg' : 'text-base';
@@ -1946,6 +2063,27 @@ export function AnnotatedReader({
         <pre key={bi} className="diary-code-block" data-language={block.codeLang ?? undefined}>
           <code>{highlightCode(block.codeContent ?? '', block.codeLang)}</code>
         </pre>
+      );
+    }
+
+    if (block.type === 'taskList') {
+      const items = block.taskItems ?? [];
+      return (
+        <ul key={bi} className="my-2 pl-1 space-y-1 list-none text-text-secondary leading-relaxed">
+          {items.map((it, ii) => (
+            <li key={ii} className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={it.checked}
+                disabled
+                readOnly
+                className="mt-1 shrink-0 w-4 h-4"
+                style={{ accentColor: 'var(--color-accent)' }}
+              />
+              <span className={it.checked ? 'text-text-muted line-through' : ''}>{renderInlineRuns(it.runs)}</span>
+            </li>
+          ))}
+        </ul>
       );
     }
 
