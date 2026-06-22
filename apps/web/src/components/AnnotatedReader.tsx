@@ -1609,7 +1609,25 @@ export function AnnotatedReader({
     try { localStorage.setItem(SELECT_HINT_KEY, '1'); } catch { /* stockage indisponible */ }
   }, []);
 
-  const [openAnchor, setOpenAnchor] = useState<string | 'general' | null>(defaultOpenAnchor ?? null);
+  // Fils de commentaires INDÉPENDANTS : chaque ancre (ou 'general') a son propre
+  // état ouvert/fermé. Ouvrir/fermer un fil n'affecte plus les autres (avant, un
+  // seul `openAnchor` → ouvrir/fermer un fil rabattait tous les autres).
+  const [openAnchors, setOpenAnchors] = useState<Set<string>>(
+    () => new Set(defaultOpenAnchor ? [defaultOpenAnchor] : []),
+  );
+  const isAnchorOpen = (a: string | null) => a != null && openAnchors.has(a);
+  const toggleAnchor = (a: string | null) => {
+    if (a == null) return;
+    setOpenAnchors((prev) => {
+      const next = new Set(prev);
+      if (next.has(a)) next.delete(a); else next.add(a);
+      return next;
+    });
+  };
+  const openAnchorFn = (a: string | null) => {
+    if (a == null) return;
+    setOpenAnchors((prev) => (prev.has(a) ? prev : new Set(prev).add(a)));
+  };
   const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
   const [panelVisible, setPanelVisible] = useState(false);
   const [selectionRect, setSelectionRect] = useState<{ top: number; bottom: number; left: number; isTouch: boolean } | null>(null);
@@ -1625,7 +1643,7 @@ export function AnnotatedReader({
   const generalCommentsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!focusGeneralComments) return;
-    setOpenAnchor('general');
+    openAnchorFn('general');
     const timer = setTimeout(() => {
       generalCommentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 150);
@@ -1641,7 +1659,7 @@ export function AnnotatedReader({
     scrolledToCommentRef.current = focusedCommentId;
     const root = target.parentId ? comments.find((c) => c.id === target.parentId) : target;
     if (!root) return;
-    setOpenAnchor(root.anchorText ?? 'general');
+    openAnchorFn(root.anchorText ?? 'general');
     // Le DOM peut ne pas être prêt tout de suite (modale qui s'anime, fil qui
     // se déplie, images en cours de chargement) → on réessaie jusqu'à ~2,5 s.
     let tries = 0;
@@ -1786,7 +1804,7 @@ export function AnnotatedReader({
         onSuccess: () => {
           setPendingAnchor(null);
           setSelectionRect(null);
-          setOpenAnchor(anchor);
+          openAnchorFn(anchor);
           dismissSelectHint(); // le geste est acquis → ne plus jamais montrer l'indice
         },
       },
@@ -1867,13 +1885,13 @@ export function AnnotatedReader({
               key={si}
               onClick={() => {
                 if (seg.anchor === pendingAnchor) return;
-                setOpenAnchor(openAnchor === seg.anchor ? null : seg.anchor);
+                toggleAnchor(seg.anchor);
                 dismissPending();
               }}
               className={`rounded-sm px-0.5 not-italic font-[inherit] transition-colors ${
                 seg.anchor === pendingAnchor
                   ? 'bg-annotation-pending outline outline-1 outline-annotation-ring cursor-default'
-                  : `cursor-pointer ${openAnchor === seg.anchor ? 'bg-annotation-open' : 'bg-annotation hover:bg-annotation-hover'}`
+                  : `cursor-pointer ${isAnchorOpen(seg.anchor) ? 'bg-annotation-open' : 'bg-annotation hover:bg-annotation-hover'}`
               }`}
             >
               {inner}
@@ -2168,13 +2186,13 @@ export function AnnotatedReader({
           key={si}
           onClick={() => {
             if (seg.anchor === pendingAnchor) return;
-            setOpenAnchor(openAnchor === seg.anchor ? null : seg.anchor);
+            toggleAnchor(seg.anchor);
             dismissPending();
           }}
           className={`rounded-sm px-0.5 not-italic font-[inherit] transition-colors ${
             seg.anchor === pendingAnchor
               ? 'bg-annotation-pending outline outline-1 outline-annotation-ring cursor-default'
-              : `cursor-pointer ${openAnchor === seg.anchor ? 'bg-annotation-open' : 'bg-annotation hover:bg-annotation-hover'}`
+              : `cursor-pointer ${isAnchorOpen(seg.anchor) ? 'bg-annotation-open' : 'bg-annotation hover:bg-annotation-hover'}`
           }`}
         >
           {inner}
@@ -2455,12 +2473,12 @@ export function AnnotatedReader({
       {/* Annotation threads */}
       {anchors.map((anchor) => {
         const n = countFor(anchor);
-        const isOpen = openAnchor === anchor;
+        const isOpen = isAnchorOpen(anchor);
         return (
           <div key={anchor} className="mb-2 rounded-xl border border-text-muted/10 overflow-hidden">
             <button
               type="button"
-              onClick={() => setOpenAnchor(isOpen ? null : anchor)}
+              onClick={() => toggleAnchor(anchor)}
               className="w-full flex items-center gap-2 px-3 py-2 text-left bg-bg-primary hover:bg-text-muted/5 transition-colors"
             >
               <span className="text-accent text-xs shrink-0">💬 {n}</span>
@@ -2500,8 +2518,8 @@ export function AnnotatedReader({
       <div ref={generalCommentsRef} className="mt-6 flex flex-col flex-1 min-h-0">
         <button
           type="button"
-          onClick={() => setOpenAnchor(openAnchor === 'general' ? null : 'general')}
-          className={`w-full flex items-center gap-3 font-mono text-[11px] uppercase tracking-widest text-text-muted/60 hover:text-text-muted transition-colors ${openAnchor === 'general' ? 'mb-6' : 'mb-10'}`}
+          onClick={() => toggleAnchor('general')}
+          className={`w-full flex items-center gap-3 font-mono text-[11px] uppercase tracking-widest text-text-muted/60 hover:text-text-muted transition-colors ${isAnchorOpen('general') ? 'mb-6' : 'mb-10'}`}
         >
           <span className="flex-1 h-px bg-text-muted/25" />
           <span className="shrink-0">
@@ -2509,7 +2527,7 @@ export function AnnotatedReader({
           </span>
           <span className="flex-1 h-px bg-text-muted/25" />
         </button>
-        {openAnchor === 'general' && (
+        {isAnchorOpen('general') && (
           <MiniThread
             anchor={null}
             comments={comments}
