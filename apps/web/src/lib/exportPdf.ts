@@ -1,4 +1,4 @@
-import { db, type LocalEntry, type LocalDailyLog, type MediaMeta } from './db/schema';
+import { db, type LocalEntry, type LocalDailyLog, type MediaMeta, type LocalNoteTypeDef } from './db/schema';
 import { getNoteTypeConfig } from '../components/NoteTypePicker';
 import {
   parseContentBlocks, groupConsecutiveMedia, unescapeMd, escapeHtml, escapeAttr,
@@ -12,6 +12,8 @@ import { PRINT_STYLES } from './exportPdf/styles';
 import { apiClient, type RouterOutputs } from './trpc';
 import { formatDateLong } from './dateHelpers';
 import { seriesGroupProgress } from './seriesProgress';
+import { sortEvents, groupByDate, formatEventEnd } from './agendaEvents';
+import { budgetTotals, formatAmount } from './budget';
 
 type EntryComment = RouterOutputs['comments']['list'][number];
 type EntryReaction = RouterOutputs['reactions']['forEntry'][number];
@@ -91,7 +93,7 @@ function collectMediaMetaImages(m?: MediaMeta | null): string[] {
 
 // ── Contexte de rendu partagé (note unique OU période) ──────────────────────
 interface EntryData { blocks: ContentBlock[]; comments: EntryComment[]; reactions: EntryReaction[]; }
-interface RenderContext { perEntry: Map<string, EntryData>; images: Map<string, string>; mermaids: Map<string, string>; }
+interface RenderContext { perEntry: Map<string, EntryData>; images: Map<string, string>; mermaids: Map<string, string>; defsById: Record<string, LocalNoteTypeDef>; }
 
 async function gatherRenderContext(entries: LocalEntry[]): Promise<RenderContext> {
   const perEntry = new Map<string, EntryData>();
@@ -123,7 +125,11 @@ async function gatherRenderContext(entries: LocalEntry[]): Promise<RenderContext
   }
   const images = await withTimeout(resolveImages(imgSrcs, entries.length > 1 ? 250 : 40), 12000, new Map<string, string>());
   const mermaids = await renderMermaids(mermaidCodes);
-  return { perEntry, images, mermaids };
+  // Types de note personnalisés : pour résoudre le comportement effectif + le
+  // libellé/couleur réels d'une note CUSTOM à l'export.
+  const defs = await db.noteTypeDefs.toArray().catch(() => [] as LocalNoteTypeDef[]);
+  const defsById: Record<string, LocalNoteTypeDef> = Object.fromEntries(defs.map((d) => [d.id, d]));
+  return { perEntry, images, mermaids, defsById };
 }
 
 // ── Rendu des sections ──────────────────────────────────────────────────────
@@ -138,7 +144,7 @@ function entryBadges(entry: LocalEntry, includeVisibility: boolean): string[] {
   return b;
 }
 
-function renderEntryHeader(entry: LocalEntry, cfg: ReturnType<typeof getNoteTypeConfig>, mode: 'full' | 'compact'): string {
+function renderEntryHeader(entry: LocalEntry, cfg: { label: string; icon: string; hex: string }, mode: 'full' | 'compact'): string {
   const color = cfg.hex;
   const time = entry.timeLabel ?? (entry.section ? SECTION_LABEL[entry.section] ?? '' : '');
   if (mode === 'full') {
@@ -172,7 +178,7 @@ function renderEntryMeta(entry: LocalEntry): string {
   return rows.length ? `<table class="pdf-meta">${rows.join('')}</table>` : '';
 }
 
-function renderMediaMeta(noteType: string, m: MediaMeta | null | undefined, images: Map<string, string>): string {
+function renderMediaMeta(behavior: string, m: MediaMeta | null | undefined, images: Map<string, string>): string {
   if (!m) return '';
   const rows: string[] = [];
   const row = (k: string, v: string) => { if (v) rows.push(`<tr><td class="k">${k}</td><td>${v}</td></tr>`); };
@@ -182,7 +188,7 @@ function renderMediaMeta(noteType: string, m: MediaMeta | null | undefined, imag
   if (m.creator) row('Auteur', escapeHtml(m.creator));
   if (m.rating) row('Note', stars(m.rating));
   if (m.status) row('Statut', STATUS_LABEL[m.status] ?? m.status);
-  if (noteType === 'SERIES') {
+  if (behavior === 'SERIES') {
     const prog = seriesGroupProgress(m);
     if (prog) row('Progression', escapeHtml(prog));
     for (const s of m.seasonsWatched ?? []) {
@@ -226,6 +232,32 @@ function renderMediaMeta(noteType: string, m: MediaMeta | null | undefined, imag
       html += '</div></div>';
     });
   }
+
+  // AGENDA : événements groupés par date (comme AgendaView).
+  if (behavior === 'AGENDA' && m.events?.length) {
+    html += `<div class="pdf-section-title">Agenda — ${m.events.length} événement${m.events.length > 1 ? 's' : ''}</div>`;
+    for (const g of groupByDate(sortEvents(m.events))) {
+      const items = g.events.map((ev) => {
+        const when = [ev.time ?? '', formatEventEnd(ev) ?? ''].filter(Boolean).join(' ');
+        return `<li>${ev.done ? '✓ ' : ''}${when ? '<strong>' + escapeHtml(when) + '</strong> · ' : ''}${escapeHtml(ev.title)}${ev.location ? ' · ' + escapeHtml(ev.location) : ''}</li>`;
+      }).join('');
+      html += `<div style="margin:4px 0"><div style="font-weight:600;margin:6px 0 2px">${escapeHtml(formatDateLong(g.date))}</div><ul>${items}</ul></div>`;
+    }
+  }
+
+  // FINANCE : totaux (entrées/sorties/solde) + lignes de budget (comme BudgetView).
+  if (behavior === 'FINANCE' && m.budgetItems?.length) {
+    const cur = m.currency || '€';
+    const t = budgetTotals(m.budgetItems);
+    html += `<div class="pdf-section-title">Budget</div>`;
+    html += `<table class="pdf-meta"><tr><td class="k">Entrées</td><td>${escapeHtml(formatAmount(t.income, cur))}</td></tr><tr><td class="k">Sorties</td><td>${escapeHtml(formatAmount(t.expense, cur))}</td></tr><tr><td class="k">Solde</td><td>${escapeHtml(formatAmount(t.balance, cur, { signed: true }))}</td></tr></table>`;
+    const rows = m.budgetItems.map((it) => {
+      const amt = formatAmount(it.kind === 'expense' ? -it.amount : it.amount, cur, { signed: true });
+      return `<tr><td>${escapeHtml(it.label)}</td><td>${escapeHtml(it.category ?? '')}</td><td style="text-align:right;white-space:nowrap">${escapeHtml(amt)}</td></tr>`;
+    }).join('');
+    html += `<table class="pdf-table"><thead><tr><th>Libellé</th><th>Catégorie</th><th>Montant</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
   return html;
 }
 
@@ -275,8 +307,24 @@ function renderDailyLog(log?: LocalDailyLog): string {
   return `<div class="pdf-dailylog"><span class="pdf-dailylog-label">Ressenti</span>${parts.map((p) => `<span class="pdf-dailylog-item">${p}</span>`).join('')}</div>`;
 }
 
-function renderEntrySection(entry: LocalEntry, ctx: RenderContext, mode: 'full' | 'compact'): string {
+/**
+ * Résout libellé / icône / couleur / comportement EFFECTIF d'une note pour
+ * l'export — y compris les types personnalisés (CUSTOM → def réelle).
+ */
+function resolveEntryCfg(entry: LocalEntry, defsById: Record<string, LocalNoteTypeDef>): { label: string; icon: string; hex: string; behavior: string } {
+  const def = entry.noteType === 'CUSTOM' && entry.customTypeId ? defsById[entry.customTypeId] : undefined;
+  if (def) {
+    // `def.icon` est une CLÉ d'icône SVG (ou un emoji legacy) : on ne l'affiche en
+    // texte que si c'est un emoji (une clé ne rendrait rien de lisible dans le PDF).
+    const isEmoji = !!def.icon && !/^[\w-]+$/.test(def.icon);
+    return { label: def.label, icon: isEmoji ? def.icon : '', hex: def.colorHex || getNoteTypeConfig('JOURNAL').hex, behavior: def.behavior };
+  }
   const cfg = getNoteTypeConfig(entry.noteType);
+  return { label: cfg.label, icon: cfg.icon, hex: cfg.hex, behavior: entry.noteType };
+}
+
+function renderEntrySection(entry: LocalEntry, ctx: RenderContext, mode: 'full' | 'compact'): string {
+  const cfg = resolveEntryCfg(entry, ctx.defsById);
   const data = ctx.perEntry.get(entry.id) ?? { blocks: [], comments: [], reactions: [] };
   let contentHtml = '';
   try { contentHtml = data.blocks.length ? blocksToHtml(data.blocks, { images: ctx.images, mermaids: ctx.mermaids }) : ''; }
@@ -284,7 +332,7 @@ function renderEntrySection(entry: LocalEntry, ctx: RenderContext, mode: 'full' 
   return [
     renderEntryHeader(entry, cfg, mode),
     renderEntryMeta(entry),
-    renderMediaMeta(entry.noteType, entry.mediaMeta, ctx.images),
+    renderMediaMeta(cfg.behavior, entry.mediaMeta, ctx.images),
     contentHtml,
     renderReactions(data.reactions),
     renderComments(data.comments, ctx.images),
@@ -352,8 +400,8 @@ async function printInWindow(win: Window, html: string): Promise<void> {
 export async function exportToPdf(entry: LocalEntry): Promise<void> {
   const win = openExportWindow();
   if (!win) return;
-  const cfg = getNoteTypeConfig(entry.noteType);
   const ctx = await gatherRenderContext([entry]);
+  const cfg = resolveEntryCfg(entry, ctx.defsById);
   const body = renderEntrySection(entry, ctx, 'full');
   await printInWindow(win, wrapPrintDoc(`${cfg.label} — ${entry.date}`, body));
 }
