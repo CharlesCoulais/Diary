@@ -4,6 +4,7 @@ import {
 } from '../../components/AnnotatedReader';
 import { parseChatBody } from '../parseChat';
 import { stripSpoilers } from '../spoilers';
+import { EXCERPT_KINDS } from '../../components/editor/excerptKinds';
 
 export interface BlocksToHtmlOpts {
   /** src d'origine → URL à utiliser dans le PDF (dataURL same-origin, ou URL
@@ -136,6 +137,24 @@ function blockToHtml(b: ContentBlock, opts: BlocksToHtmlOpts, depth: number): st
       return `<pre class="pdf-code" data-lang="mermaid">${escapeHtml(b.mermaidCode ?? '')}</pre>`;
     }
     case 'chat': return chatToHtml(b, opts);
+    case 'excerpt': {
+      const kind = b.excerptKind ?? 'book';
+      const cfg = EXCERPT_KINDS[kind] ?? EXCERPT_KINDS.book;
+      const meta = b.excerptMeta ?? {};
+      const hasMeta = cfg.fields.some((f) => meta[f.key]);
+      const { title, byline, refs } = cfg.summarize(meta);
+      const head = hasMeta
+        ? [title, byline ? '— ' + byline : '', refs.length ? '· ' + refs.join(' · ') : ''].filter(Boolean).join(' ')
+        : cfg.label;
+      // Réutilise le style encadré des branches (même forme : en-tête + corps cité).
+      return `<div class="pdf-branch"><div class="pdf-branch-head">${escapeHtml(head)}</div><div class="pdf-branch-body">${blocksToHtml(b.children ?? [], { ...opts, depth: depth + 1 })}</div></div>`;
+    }
+    case 'taskList': {
+      const items = (b.taskItems ?? []).map((it) =>
+        `<li style="margin:0.15em 0">${it.checked ? '☑' : '☐'} <span${it.checked ? ' style="text-decoration:line-through;color:#888"' : ''}>${runsToHtml(it.runs)}</span></li>`,
+      ).join('');
+      return `<ul style="list-style:none;padding-left:0.3em;margin:0.4em 0">${items}</ul>`;
+    }
     default: return '';
   }
 }
